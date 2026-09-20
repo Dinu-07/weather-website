@@ -11,6 +11,7 @@ from weather_core import (
     add_fahrenheit_columns,
     analyze_trends,
     clean_data,
+    fetch_air_quality,
     fetch_weather_data,
     simple_forecast,
 )
@@ -33,7 +34,8 @@ weather_cache: Dict[Tuple[float, float, str, str], pd.DataFrame] = {}
 def get_cached_or_fetch_weather(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
     """
     Retrieve processed weather data from in-memory cache if present;
-    otherwise fetch from Open-Meteo, clean, and enrich with Fahrenheit columns.
+    otherwise fetch from Open-Meteo, clean, enrich with Fahrenheit columns,
+    and merge air quality telemetry.
     """
     cache_key = (round(float(lat), 4), round(float(lon), 4), str(start), str(end))
     if cache_key in weather_cache:
@@ -42,6 +44,14 @@ def get_cached_or_fetch_weather(lat: float, lon: float, start: str, end: str) ->
     raw_df = fetch_weather_data(latitude=lat, longitude=lon, start_date=start, end_date=end)
     cleaned_df = clean_data(raw_df)
     full_df = add_fahrenheit_columns(cleaned_df)
+
+    # Fetch and merge Air Quality telemetry
+    aq_df = fetch_air_quality(latitude=lat, longitude=lon, start_date=start, end_date=end)
+    if not aq_df.empty:
+        full_df = pd.merge(full_df, aq_df, on="date", how="left")
+    else:
+        for c in ["european_aqi", "us_aqi", "pm2_5", "pm10"]:
+            full_df[c] = None
 
     weather_cache[cache_key] = full_df
     return full_df

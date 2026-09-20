@@ -31,7 +31,7 @@ export default function Histogram({ daily = [], stats = {} }) {
 
     const min = Math.floor(Math.min(...temps));
     const max = Math.ceil(Math.max(...temps));
-    const numBins = Math.min(20, Math.max(8, Math.round(Math.sqrt(temps.length))));
+    const numBins = Math.min(16, Math.max(6, Math.round(Math.sqrt(temps.length))));
     const binWidth = (max - min) / numBins;
 
     const binList = [];
@@ -41,7 +41,7 @@ export default function Histogram({ daily = [], stats = {} }) {
       binList.push({
         min: bMin,
         max: bMax,
-        label: `${bMin.toFixed(1)} - ${bMax.toFixed(1)}°`,
+        label: `${bMin.toFixed(0)}-${bMax.toFixed(0)}°`,
         count: 0,
       });
     }
@@ -59,12 +59,12 @@ export default function Histogram({ daily = [], stats = {} }) {
       labels: binList.map((b) => b.label),
       datasets: [
         {
-          label: 'Frequency (days)',
+          label: 'Days Observed',
           data: binList.map((b) => b.count),
-          backgroundColor: 'rgba(85, 168, 104, 0.85)', // Matplotlib #55A868
-          borderColor: '#3b8b4c',
-          borderWidth: 1,
-          borderRadius: 3,
+          backgroundColor: '#10b981', // Clean flat green
+          borderRadius: 6,
+          borderSkipped: false,
+          hoverBackgroundColor: '#059669',
         },
       ],
     };
@@ -72,7 +72,7 @@ export default function Histogram({ daily = [], stats = {} }) {
     return { chartData: data, bins: binList, avgTemp: avg };
   }, [daily, stats]);
 
-  // Plugin to draw dashed vertical line at mean temperature
+  // Plugin to draw subtle dashed vertical line at mean temperature
   const meanLinePlugin = useMemo(() => {
     return {
       id: 'meanLinePlugin',
@@ -98,15 +98,15 @@ export default function Histogram({ daily = [], stats = {} }) {
 
         ctx.save();
         ctx.beginPath();
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([4, 4]);
         ctx.moveTo(xPos, top);
         ctx.lineTo(xPos, bottom);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#C44E52';
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = '#ef4444';
         ctx.stroke();
 
-        ctx.fillStyle = '#C44E52';
-        ctx.font = 'bold 11px sans-serif';
+        ctx.fillStyle = '#ef4444';
+        ctx.font = '500 11px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`Mean: ${avgTemp.toFixed(1)}°C`, xPos, top - 6);
         ctx.restore();
@@ -120,56 +120,57 @@ export default function Histogram({ daily = [], stats = {} }) {
     plugins: {
       title: {
         display: true,
-        text: 'Distribution of Daily Mean Temperatures',
-        font: { size: 16, weight: 'bold' },
-        color: '#1e293b',
-        padding: { bottom: 15 },
+        text: 'Temperature Frequency Distribution',
+        font: { family: "'Inter', sans-serif", size: 14, weight: '600' },
+        color: '#475569',
+        align: 'start',
+        padding: { bottom: 16 },
       },
       legend: {
-        position: 'top',
-        labels: { boxWidth: 12 },
+        display: false,
       },
       tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        titleColor: '#ffffff',
+        bodyColor: '#e2e8f0',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 8,
+        titleFont: { family: "'Inter', sans-serif", size: 12, weight: '600' },
+        bodyFont: { family: "'Inter', sans-serif", size: 12 },
         callbacks: {
-          title: (items) => `Temperature Range: ${items[0].label}C`,
-          label: (item) => ` ${item.parsed.y} days`,
+          title: (items) => `Temperature: ${items[0].label}C`,
+          label: (context) => ` ${context.parsed.y} days`,
         },
       },
     },
     scales: {
       x: {
-        title: {
-          display: true,
-          text: 'Temperature Range (°C)',
-          font: { weight: 'bold' },
-        },
         grid: { display: false },
         ticks: {
-          maxRotation: 45,
-          minRotation: 30,
-          font: { size: 10 },
+          color: '#94a3b8',
+          font: { family: "'Inter', sans-serif", size: 11 },
         },
       },
       y: {
-        title: {
-          display: true,
-          text: 'Frequency (days)',
-          font: { weight: 'bold' },
+        grid: { color: 'rgba(148, 163, 184, 0.12)' },
+        ticks: {
+          color: '#94a3b8',
+          precision: 0,
+          font: { family: "'Inter', sans-serif", size: 11 },
         },
-        grid: { color: 'rgba(0, 0, 0, 0.08)' },
-        beginAtZero: true,
-        ticks: { precision: 0 },
       },
     },
   };
 
   if (!chartData) {
-    return <div className="card empty-chart">No distribution data available.</div>;
+    return <div className="empty-chart">No distribution data available.</div>;
   }
 
   return (
-    <div className="card chart-card">
-      <div className="chart-container" style={{ height: '340px' }}>
+    <div className="chart-card-inner">
+      <div className="chart-canvas-container" style={{ height: '320px' }}>
         <Bar data={chartData} options={options} plugins={[meanLinePlugin]} />
       </div>
     </div>

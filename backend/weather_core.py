@@ -24,7 +24,9 @@ except ImportError:
 def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_date: str,
                        cache_file: str = None) -> pd.DataFrame:
     """
-    Fetch daily historical weather data from the Open-Meteo Archive API.
+    Fetch daily historical weather data from the Open-Meteo Archive API,
+    including sunrise, sunset, uv_index_max, weathercode, and hourly relative_humidity_2m
+    aggregated into daily mean humidity.
 
     Parameters
     ----------
@@ -39,7 +41,8 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
     -------
     pandas.DataFrame with columns:
         date, temp_max_c, temp_min_c, temp_mean_c,
-        precipitation_mm, windspeed_max_kmh
+        precipitation_mm, windspeed_max_kmh,
+        sunrise, sunset, uv_index_max, weathercode, humidity_pct
     """
     if cache_file and os.path.exists(cache_file):
         return pd.read_csv(cache_file, parse_dates=["date"])
@@ -56,7 +59,12 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
             "temperature_2m_mean",
             "precipitation_sum",
             "windspeed_10m_max",
+            "sunrise",
+            "sunset",
+            "uv_index_max",
+            "weathercode",
         ]),
+        "hourly": "relative_humidity_2m",
         "timezone": "auto",
     }
 
@@ -68,19 +76,111 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
         raise ValueError("Unexpected API response format from Open-Meteo.")
 
     daily = payload["daily"]
+    weathercode_data = daily.get("weathercode") if "weathercode" in daily else daily.get("weather_code")
+
     df = pd.DataFrame({
         "date": pd.to_datetime(daily["time"]),
-        "temp_max_c": daily["temperature_2m_max"],
-        "temp_min_c": daily["temperature_2m_min"],
-        "temp_mean_c": daily["temperature_2m_mean"],
-        "precipitation_mm": daily["precipitation_sum"],
-        "windspeed_max_kmh": daily["windspeed_10m_max"],
+        "temp_max_c": daily.get("temperature_2m_max"),
+        "temp_min_c": daily.get("temperature_2m_min"),
+        "temp_mean_c": daily.get("temperature_2m_mean"),
+        "precipitation_mm": daily.get("precipitation_sum"),
+        "windspeed_max_kmh": daily.get("windspeed_10m_max"),
+        "sunrise": daily.get("sunrise"),
+        "sunset": daily.get("sunset"),
+        "uv_index_max": daily.get("uv_index_max"),
+        "weathercode": weathercode_data,
     })
+
+    # Hourly relative humidity aggregation into daily mean
+    if "hourly" in payload and "time" in payload["hourly"] and "relative_humidity_2m" in payload["hourly"]:
+        hourly_df = pd.DataFrame({
+            "datetime": pd.to_datetime(payload["hourly"]["time"]),
+            "humidity": payload["hourly"]["relative_humidity_2m"],
+        })
+        hourly_df["date"] = pd.to_datetime(hourly_df["datetime"].dt.date)
+        daily_hum = hourly_df.groupby("date")["humidity"].mean().round(1).reset_index()
+        daily_hum.rename(columns={"humidity": "humidity_pct"}, inplace=True)
+        df = pd.merge(df, daily_hum, on="date", how="left")
+    else:
+        df["humidity_pct"] = None
+
+    # Overlay live UV Index from Forecast API for overlapping recent dates (~90 days past to +16 days ahead)
+    try:
+        min_fore_date = (datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+        max_fore_date = (datetime.today() + timedelta(days=16)).strftime("%Y-%m-%d")
+        overlap_start = max(start_date, min_fore_date)
+        overlap_end = min(end_date, max_fore_date)
+
+        if overlap_start <= overlap_end:
+            fore_url = "https://api.open-meteo.com/v1/forecast"
+            fore_params = {
+                "latitude": latitude,
+                "longitude": longitude,
+                "start_date": overlap_start,
+                "end_date": overlap_end,
+                "daily": "uv_index_max",
+                "timezone": "auto",
+            }
+            fore_res = requests.get(fore_url, params=fore_params, timeout=10)
+            if fore_res.status_code == 200:
+                fore_daily = fore_res.json().get("daily", {})
+                if "time" in fore_daily and "uv_index_max" in fore_daily:
+                    uv_map = dict(zip(pd.to_datetime(fore_daily["time"]).strftime("%Y-%m-%d"), fore_daily["uv_index_max"]))
+                    date_strs = df["date"].dt.strftime("%Y-%m-%d")
+                    mapped_uv = date_strs.map(uv_map)
+                    df["uv_index_max"] = mapped_uv.combine_first(df["uv_index_max"])
+    except Exception:
+        pass
 
     if cache_file:
         df.to_csv(cache_file, index=False)
 
     return df
+
+
+def fetch_air_quality(latitude: float, longitude: float, start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Fetch historical air quality telemetry (european_aqi, us_aqi, pm2_5, pm10) from Open-Meteo
+    and aggregate into daily averages.
+    If date range is out of bounds or API fails (e.g. for older historical dates),
+    returns an empty DataFrame so null values can be used.
+    """
+    url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "start_date": start_date,
+        "end_date": end_date,
+        "hourly": "european_aqi,us_aqi,pm2_5,pm10",
+        "timezone": "auto",
+    }
+    cols = ["date", "european_aqi", "us_aqi", "pm2_5", "pm10"]
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code != 200:
+            return pd.DataFrame(columns=cols)
+
+        payload = response.json()
+        if "hourly" not in payload or "time" not in payload["hourly"]:
+            return pd.DataFrame(columns=cols)
+
+        hourly = payload["hourly"]
+        hourly_df = pd.DataFrame({
+            "datetime": pd.to_datetime(hourly["time"]),
+            "european_aqi": hourly.get("european_aqi"),
+            "us_aqi": hourly.get("us_aqi"),
+            "pm2_5": hourly.get("pm2_5"),
+            "pm10": hourly.get("pm10"),
+        })
+        hourly_df["date"] = pd.to_datetime(hourly_df["datetime"].dt.date)
+
+        daily_aq = hourly_df.groupby("date")[["european_aqi", "us_aqi", "pm2_5", "pm10"]].mean().reset_index()
+        for c in ["european_aqi", "us_aqi", "pm2_5", "pm10"]:
+            daily_aq[c] = daily_aq[c].round(1)
+
+        return daily_aq
+    except Exception:
+        return pd.DataFrame(columns=cols)
 
 
 def load_weather_csv(path: str) -> pd.DataFrame:
@@ -171,7 +271,7 @@ def add_fahrenheit_columns(df: pd.DataFrame) -> pd.DataFrame:
 # 4. TREND ANALYSIS
 # ----------------------------------------------------------------
 def analyze_trends(df: pd.DataFrame) -> dict:
-    """Compute summary statistics, trend direction, and monthly averages."""
+    """Compute summary statistics, trend direction, monthly averages, and dominant weathercode."""
     stats = {
         "start_date": df["date"].min().date().isoformat(),
         "end_date": df["date"].max().date().isoformat(),
@@ -181,6 +281,16 @@ def analyze_trends(df: pd.DataFrame) -> dict:
         "min_temp_c": round(float(df["temp_min_c"].min()), 2) if "temp_min_c" in df.columns else None,
         "std_temp_c": round(float(df["temp_mean_c"].std()), 2) if len(df) > 1 else 0.0,
     }
+
+    # Dominant weathercode across the selected period
+    if "weathercode" in df.columns:
+        valid_codes = df["weathercode"].dropna()
+        if not valid_codes.empty:
+            stats["dominant_weathercode"] = int(valid_codes.mode().iloc[0])
+        else:
+            stats["dominant_weathercode"] = None
+    else:
+        stats["dominant_weathercode"] = None
 
     # Linear trend: slope of mean temperature over time (deg C per day)
     x = np.arange(len(df))
@@ -247,7 +357,6 @@ def simple_forecast(df: pd.DataFrame, days_ahead: int = 7) -> pd.DataFrame:
             future_x = np.arange(len(recent), len(recent) + days_ahead)
             predictions = slope * future_x + intercept
     else:
-        # Fallback if insufficient points
         predictions = np.repeat(y[-1] if len(y) > 0 else 20.0, days_ahead)
 
     last_date = df["date"].max()

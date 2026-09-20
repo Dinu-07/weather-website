@@ -40,7 +40,7 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
       ...forecast.map(() => null),
     ];
 
-    // Forecast dataset - connects with the last actual data point
+    // Forecast dataset
     const forecastData = [
       ...recentActuals.slice(0, -1).map(() => null),
       recentActuals[recentActuals.length - 1].temp_mean_c,
@@ -51,25 +51,25 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
       labels,
       datasets: [
         {
-          label: 'Recent Actual Temps (°C)',
+          label: 'Historical Actuals (°C)',
           data: actualsData,
-          borderColor: '#4C72B0',
-          backgroundColor: '#4C72B0',
+          borderColor: '#0284c7', // Flat blue
+          backgroundColor: '#0284c7',
           borderWidth: 2,
-          pointRadius: 3.5,
-          pointHoverRadius: 6,
+          pointRadius: 2.5,
+          pointHoverRadius: 5,
           fill: false,
-          tension: 0.1,
+          tension: 0.15,
         },
         {
-          label: `${forecast.length}-Day Forecast (Trend Projection)`,
+          label: `${forecast.length}-Day Linear Projection`,
           data: forecastData,
-          borderColor: '#DD8452',
-          backgroundColor: '#DD8452',
-          borderDash: [6, 6],
+          borderColor: '#f97316', // Flat orange
+          backgroundColor: '#f97316',
+          borderDash: [5, 4],
           borderWidth: 2.2,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          pointRadius: 3,
+          pointHoverRadius: 5,
           fill: false,
           tension: 0.1,
         },
@@ -79,7 +79,7 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
     return { chartData: data, separatorIndex: recentActuals.length - 1 };
   }, [daily, forecast]);
 
-  // Plugin to draw vertical marker separating actuals from forecast
+  // Plugin to draw subtle vertical marker separating actuals from forecast
   const separatorPlugin = useMemo(() => {
     return {
       id: 'separatorPlugin',
@@ -99,13 +99,13 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
         ctx.moveTo(xPos, top);
         ctx.lineTo(xPos, bottom);
         ctx.lineWidth = 1.5;
-        ctx.strokeStyle = '#64748b';
+        ctx.strokeStyle = '#f97316';
         ctx.stroke();
 
-        ctx.fillStyle = '#64748b';
-        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#f97316';
+        ctx.font = '500 11px Inter, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Historical / Forecast', xPos, bottom - 10);
+        ctx.fillText('Forecast Start', xPos, top - 6);
         ctx.restore();
       },
     };
@@ -121,54 +121,69 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
     plugins: {
       title: {
         display: true,
-        text: 'Basic Short-Term Temperature Forecast',
-        font: { size: 16, weight: 'bold' },
-        color: '#1e293b',
-        padding: { bottom: 15 },
+        text: 'Short-Term Forecast (Linear Projection)',
+        font: { family: "'Inter', sans-serif", size: 14, weight: '600' },
+        color: '#475569',
+        align: 'start',
+        padding: { bottom: 16 },
       },
       legend: {
         position: 'top',
+        align: 'end',
         labels: {
           usePointStyle: true,
+          pointStyle: 'circle',
           boxWidth: 8,
+          boxHeight: 8,
+          color: '#64748b',
+          font: { family: "'Inter', sans-serif", size: 12 },
         },
       },
       tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        titleColor: '#ffffff',
+        bodyColor: '#e2e8f0',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 8,
+        titleFont: { family: "'Inter', sans-serif", size: 12, weight: '600' },
+        bodyFont: { family: "'Inter', sans-serif", size: 12 },
         callbacks: {
           label: (context) => {
             const val = context.parsed.y;
-            if (val === null || val === undefined) return null;
-            return ` ${context.dataset.label}: ${val.toFixed(2)} °C`;
+            return ` ${context.dataset.label}: ${val !== null && val !== undefined ? val.toFixed(1) : '--'} °C`;
           },
         },
       },
     },
     scales: {
       x: {
-        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+        grid: { color: 'rgba(148, 163, 184, 0.12)' },
         ticks: {
-          maxTicksLimit: 14,
-          font: { size: 11 },
+          color: '#94a3b8',
+          maxTicksLimit: 12,
+          font: { family: "'Inter', sans-serif", size: 11 },
         },
       },
       y: {
-        title: {
-          display: true,
-          text: 'Temperature (°C)',
-          font: { weight: 'bold' },
+        grid: { color: 'rgba(148, 163, 184, 0.12)' },
+        ticks: {
+          color: '#94a3b8',
+          font: { family: "'Inter', sans-serif", size: 11 },
+          callback: (value) => `${value}°C`,
         },
-        grid: { color: 'rgba(0, 0, 0, 0.08)' },
       },
     },
   };
 
   if (!chartData) {
-    return <div className="card empty-chart">No forecast data available.</div>;
+    return <div className="empty-chart">No forecast projection available.</div>;
   }
 
   return (
-    <div className="card chart-card">
-      <div className="chart-container" style={{ height: '340px' }}>
+    <div className="chart-card-inner">
+      <div className="chart-canvas-container" style={{ height: '320px' }}>
         <Line data={chartData} options={options} plugins={[separatorPlugin]} />
       </div>
     </div>

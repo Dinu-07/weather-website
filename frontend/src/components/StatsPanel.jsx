@@ -1,8 +1,5 @@
 import React from 'react';
 
-const toFahrenheit = (c) =>
-  c !== null && c !== undefined ? ((c * 9) / 5 + 32).toFixed(1) : 'N/A';
-
 export default function StatsPanel({ stats }) {
   if (!stats) return null;
 
@@ -18,83 +15,99 @@ export default function StatsPanel({ stats }) {
     trend_direction,
   } = stats;
 
-  const getDirectionBadge = () => {
-    switch (trend_direction?.toLowerCase()) {
-      case 'warming':
-        return {
-          label: 'Warming',
-          icon: '↗',
-          className: 'trend-badge warming',
-        };
-      case 'cooling':
-        return {
-          label: 'Cooling',
-          icon: '↘',
-          className: 'trend-badge cooling',
-        };
-      default:
-        return {
-          label: trend_direction || 'Stable',
-          icon: '→',
-          className: 'trend-badge stable',
-        };
-    }
-  };
+  const toFahrenheit = (c) =>
+    c !== null && c !== undefined ? `${((c * 9) / 5 + 32).toFixed(1)}°F` : '--';
 
-  const badge = getDirectionBadge();
+  const isWarming = trend_direction?.toLowerCase() === 'warming';
+  const isCooling = trend_direction?.toLowerCase() === 'cooling';
+
+  const trendIcon = isWarming ? '↗' : isCooling ? '↘' : '→';
+  const trendColor = isWarming ? '#ef4444' : isCooling ? '#0284c7' : '#10b981';
+  const trendBg = isWarming ? 'rgba(239, 68, 68, 0.12)' : isCooling ? 'rgba(2, 132, 199, 0.12)' : 'rgba(16, 185, 129, 0.12)';
 
   return (
-    <div className="card stats-card">
-      <div className="stats-header">
+    <div className="summary-stats-section">
+      <div className="section-header-row">
         <div>
-          <h3>Summary Statistics</h3>
-          <p className="stats-range">
-            {start_date} to {end_date} &bull; <strong>{num_days}</strong> observed days
+          <h3 className="section-title">Temperature & Trend Analysis</h3>
+          <p className="section-subtitle">
+            {start_date} to {end_date} • {num_days} days observed
           </p>
         </div>
-        <div className="trend-summary">
-          <span className={badge.className}>
-            <span className="trend-icon">{badge.icon}</span> {badge.label}
-          </span>
-          {trend_slope_c_per_day !== undefined && (
-            <span className="trend-slope">
-              {trend_slope_c_per_day > 0 ? '+' : ''}
-              {trend_slope_c_per_day.toFixed(4)} °C/day
+
+        {trend_direction && (
+          <div
+            className="trend-pill"
+            style={{ backgroundColor: trendBg, color: trendColor }}
+          >
+            <span className="trend-arrow">{trendIcon}</span>
+            <span className="trend-name">
+              {trend_direction.charAt(0).toUpperCase() + trend_direction.slice(1)}
             </span>
-          )}
-        </div>
+            {trend_slope_c_per_day !== undefined && (
+              <span className="trend-val">
+                ({trend_slope_c_per_day > 0 ? '+' : ''}
+                {trend_slope_c_per_day.toFixed(3)}°C/day)
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-box">
-          <span className="stat-label">Average Temperature</span>
-          <div className="stat-value">
-            {avg_temp_c !== null ? `${avg_temp_c.toFixed(1)}°C` : 'N/A'}
-            <span className="stat-sub">{toFahrenheit(avg_temp_c)}°F</span>
+      <div className="stats-cards-grid">
+        <div className="stat-card">
+          <div className="stat-card-label">
+            <span className="stat-dot dot-mean" />
+            Mean Temperature
+          </div>
+          <div className="stat-card-main-val">
+            {avg_temp_c !== null && avg_temp_c !== undefined ? avg_temp_c.toFixed(1) : '--'}
+            <span className="stat-card-unit">°C</span>
+          </div>
+          <div className="stat-card-secondary-val">
+            {toFahrenheit(avg_temp_c)}
           </div>
         </div>
 
-        <div className="stat-box">
-          <span className="stat-label">Maximum Recorded</span>
-          <div className="stat-value max-temp">
-            {max_temp_c !== null ? `${max_temp_c.toFixed(1)}°C` : 'N/A'}
-            <span className="stat-sub">{toFahrenheit(max_temp_c)}°F</span>
+        <div className="stat-card">
+          <div className="stat-card-label">
+            <span className="stat-dot dot-high" />
+            Peak High
+          </div>
+          <div className="stat-card-main-val">
+            {max_temp_c !== null && max_temp_c !== undefined ? max_temp_c.toFixed(1) : '--'}
+            <span className="stat-card-unit">°C</span>
+          </div>
+          <div className="stat-card-secondary-val">
+            {toFahrenheit(max_temp_c)}
           </div>
         </div>
 
-        <div className="stat-box">
-          <span className="stat-label">Minimum Recorded</span>
-          <div className="stat-value min-temp">
-            {min_temp_c !== null ? `${min_temp_c.toFixed(1)}°C` : 'N/A'}
-            <span className="stat-sub">{toFahrenheit(min_temp_c)}°F</span>
+        <div className="stat-card">
+          <div className="stat-card-label">
+            <span className="stat-dot dot-low" />
+            Trough Low
+          </div>
+          <div className="stat-card-main-val">
+            {min_temp_c !== null && min_temp_c !== undefined ? min_temp_c.toFixed(1) : '--'}
+            <span className="stat-card-unit">°C</span>
+          </div>
+          <div className="stat-card-secondary-val">
+            {toFahrenheit(min_temp_c)}
           </div>
         </div>
 
-        <div className="stat-box">
-          <span className="stat-label">Standard Deviation</span>
-          <div className="stat-value">
-            {std_temp_c !== null ? `±${std_temp_c.toFixed(2)}°C` : 'N/A'}
-            <span className="stat-sub">Variation</span>
+        <div className="stat-card">
+          <div className="stat-card-label">
+            <span className="stat-dot dot-std" />
+            Std Deviation
+          </div>
+          <div className="stat-card-main-val">
+            {std_temp_c !== null && std_temp_c !== undefined ? `±${std_temp_c.toFixed(1)}` : '--'}
+            <span className="stat-card-unit">°C</span>
+          </div>
+          <div className="stat-card-secondary-val">
+            Variance across period
           </div>
         </div>
       </div>

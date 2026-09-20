@@ -32,7 +32,7 @@ export default function TrendChart({ daily = [] }) {
     const maxTemps = daily.map((d) => d.temp_max_c);
     const minTemps = daily.map((d) => d.temp_min_c);
 
-    // Compute 7-day rolling average (min_periods = 1)
+    // Compute 7-day rolling average
     const rollingAvg = daily.map((_, idx) => {
       const start = Math.max(0, idx - 6);
       const window = daily.slice(start, idx + 1);
@@ -46,41 +46,41 @@ export default function TrendChart({ daily = [] }) {
         {
           label: 'Daily Max (°C)',
           data: maxTemps,
-          borderColor: 'rgba(76, 114, 176, 0.25)',
+          borderColor: 'rgba(2, 132, 199, 0.25)',
           borderWidth: 1,
           pointRadius: 0,
           fill: false,
-          tension: 0.1,
+          tension: 0.15,
         },
         {
-          label: 'Daily Min-Max Range',
+          label: 'Min-Max Range',
           data: minTemps,
-          borderColor: 'rgba(76, 114, 176, 0.25)',
+          borderColor: 'rgba(2, 132, 199, 0.25)',
           borderWidth: 1,
           pointRadius: 0,
-          backgroundColor: 'rgba(76, 114, 176, 0.18)',
-          fill: '-1', // Fill between this dataset (Min) and the previous dataset (Max)
-          tension: 0.1,
+          backgroundColor: 'rgba(2, 132, 199, 0.08)',
+          fill: '-1',
+          tension: 0.15,
         },
         {
-          label: 'Daily Mean Temp (°C)',
+          label: 'Daily Mean (°C)',
           data: meanTemps,
-          borderColor: 'rgba(76, 114, 176, 0.65)',
-          borderWidth: 1.2,
+          borderColor: '#0284c7', // Flat light blue
+          backgroundColor: '#0284c7',
+          borderWidth: 1.8,
           pointRadius: daily.length > 90 ? 0 : 2,
           pointHoverRadius: 5,
-          pointBackgroundColor: '#4C72B0',
           fill: false,
-          tension: 0.1,
+          tension: 0.15,
         },
         {
-          label: '7-Day Rolling Average (°C)',
+          label: '7-Day Rolling Trend',
           data: rollingAvg,
-          borderColor: '#C44E52',
+          borderColor: '#ef4444', // Flat red
+          backgroundColor: '#ef4444',
           borderWidth: 2.2,
           pointRadius: 0,
           pointHoverRadius: 5,
-          pointBackgroundColor: '#C44E52',
           fill: false,
           tension: 0.2,
         },
@@ -98,54 +98,70 @@ export default function TrendChart({ daily = [] }) {
     plugins: {
       title: {
         display: true,
-        text: 'Temperature Trend Over Time',
-        font: { size: 16, weight: 'bold' },
-        color: '#1e293b',
-        padding: { bottom: 15 },
+        text: 'Temperature Trend & Rolling Average',
+        font: { family: "'Inter', sans-serif", size: 14, weight: '600' },
+        color: '#475569',
+        align: 'start',
+        padding: { bottom: 16 },
       },
       legend: {
         position: 'top',
+        align: 'end',
         labels: {
           usePointStyle: true,
+          pointStyle: 'circle',
           boxWidth: 8,
-          filter: (item) => item.text !== 'Daily Max (°C)', // clean up duplicate legend item for the filled band
+          boxHeight: 8,
+          color: '#64748b',
+          font: { family: "'Inter', sans-serif", size: 12 },
+          filter: (item) => item.text !== 'Daily Max (°C)',
         },
       },
       tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        titleColor: '#ffffff',
+        bodyColor: '#e2e8f0',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 8,
+        titleFont: { family: "'Inter', sans-serif", size: 12, weight: '600' },
+        bodyFont: { family: "'Inter', sans-serif", size: 12 },
         callbacks: {
           label: (context) => {
             const val = context.parsed.y;
-            return ` ${context.dataset.label}: ${val !== null && val !== undefined ? val.toFixed(1) : 'N/A'} °C`;
+            return ` ${context.dataset.label}: ${val !== null && val !== undefined ? val.toFixed(1) : '--'} °C`;
           },
         },
       },
     },
     scales: {
       x: {
-        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+        grid: { color: 'rgba(148, 163, 184, 0.12)' },
         ticks: {
-          maxTicksLimit: 12,
-          font: { size: 11 },
+          color: '#94a3b8',
+          maxTicksLimit: 10,
+          font: { family: "'Inter', sans-serif", size: 11 },
         },
       },
       y: {
-        title: {
-          display: true,
-          text: 'Temperature (°C)',
-          font: { weight: 'bold' },
+        grid: { color: 'rgba(148, 163, 184, 0.12)' },
+        ticks: {
+          color: '#94a3b8',
+          font: { family: "'Inter', sans-serif", size: 11 },
+          callback: (value) => `${value}°C`,
         },
-        grid: { color: 'rgba(0, 0, 0, 0.08)' },
       },
     },
   };
 
   if (!chartData) {
-    return <div className="card empty-chart">No trend data available.</div>;
+    return <div className="empty-chart">No temperature data available for this range.</div>;
   }
 
   return (
-    <div className="card chart-card">
-      <div className="chart-container" style={{ height: '360px' }}>
+    <div className="chart-card-inner">
+      <div className="chart-canvas-container" style={{ height: '320px' }}>
         <Line data={chartData} options={options} />
       </div>
     </div>

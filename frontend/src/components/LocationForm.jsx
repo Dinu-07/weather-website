@@ -106,7 +106,6 @@ export default function LocationForm({ onSubmit, isLoading }) {
     e.preventDefault();
     if (!start || !end) return;
 
-    // If a place is selected, submit with its coordinates
     if (selectedLocation) {
       onSubmit({
         lat: selectedLocation.lat,
@@ -116,7 +115,6 @@ export default function LocationForm({ onSubmit, isLoading }) {
         locationName: selectedLocation.fullName || selectedLocation.name,
       });
     } else if (suggestions.length > 0) {
-      // Pick first suggestion if user typed without clicking
       const topMatch = suggestions[0];
       selectPlace(topMatch);
       onSubmit({
@@ -130,135 +128,133 @@ export default function LocationForm({ onSubmit, isLoading }) {
   };
 
   return (
-    <div className="card form-card">
-      <div className="card-header">
-        <h2>Location & Date Selection</h2>
-        <div className="presets-list">
-          <span className="preset-label">Quick Presets:</span>
+    <div className="search-control-wrapper">
+      <form onSubmit={handleSubmit} className="search-form-layout">
+        {/* Pill-shaped search bar */}
+        <div className="pill-search-container" ref={searchContainerRef}>
+          <div className="pill-search-bar">
+            <span className="pill-search-icon">🔍</span>
+            <input
+              type="text"
+              className="pill-search-input"
+              autoComplete="off"
+              placeholder="Search city, town, or coordinates worldwide..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              onFocus={() => {
+                if (suggestions.length > 0) setIsDropdownOpen(true);
+              }}
+              disabled={isLoading}
+            />
+
+            {isSearching && <span className="pill-spinner" />}
+
+            {searchQuery && (
+              <button
+                type="button"
+                className="pill-clear-btn"
+                title="Clear search"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSuggestions([]);
+                  setIsDropdownOpen(false);
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Autocomplete Dropdown */}
+          {isDropdownOpen && suggestions.length > 0 && (
+            <ul className="pill-dropdown-menu">
+              {suggestions.map((item, idx) => (
+                <li
+                  key={`${item.latitude}-${item.longitude}-${idx}`}
+                  className="pill-dropdown-item"
+                  onClick={() => selectPlace(item)}
+                >
+                  <span className="item-icon">📍</span>
+                  <div className="item-details">
+                    <strong className="item-name">{item.name}</strong>
+                    <span className="item-sub">
+                      {[item.region, item.country].filter(Boolean).join(', ')}
+                    </span>
+                  </div>
+                  <span className="item-coords">
+                    {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {isDropdownOpen && suggestions.length === 0 && !isSearching && searchQuery.trim().length >= 2 && (
+            <div className="pill-dropdown-menu pill-no-results">
+              No matching locations found.
+            </div>
+          )}
+        </div>
+
+        {/* Date & Action Controls */}
+        <div className="controls-row">
+          <div className="date-inputs-group">
+            <div className="date-input-wrapper">
+              <label htmlFor="start-date" className="date-label">From</label>
+              <input
+                id="start-date"
+                type="date"
+                className="clean-date-input"
+                required
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="date-input-wrapper">
+              <label htmlFor="end-date" className="date-label">To</label>
+              <input
+                id="end-date"
+                type="date"
+                className="clean-date-input"
+                required
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="clean-submit-btn"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <span className="btn-loading-flex">
+                <span className="pill-spinner-btn" /> Loading...
+              </span>
+            ) : (
+              'Analyze'
+            )}
+          </button>
+        </div>
+
+        {/* Quick Presets */}
+        <div className="presets-pill-row">
+          <span className="presets-caption">Popular:</span>
           {PRESETS.map((p) => (
             <button
               key={p.name}
               type="button"
-              className={`preset-btn ${selectedLocation?.name === p.name ? 'active' : ''}`}
+              className={`preset-pill ${selectedLocation?.name === p.name ? 'active' : ''}`}
               onClick={() => applyPreset(p)}
               disabled={isLoading}
             >
               {p.name}
             </button>
           ))}
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="location-form">
-        <div className="search-and-dates-grid">
-          {/* Geocoding Search Box */}
-          <div className="form-group search-group" ref={searchContainerRef}>
-            <label htmlFor="location-search">
-              Location Search{' '}
-              {selectedLocation && (
-                <span className="coords-hint">
-                  ({selectedLocation.lat.toFixed(2)}°N, {selectedLocation.lon.toFixed(2)}°E)
-                </span>
-              )}
-            </label>
-            <div className="search-input-wrapper">
-              <span className="search-icon">🔍</span>
-              <input
-                id="location-search"
-                type="text"
-                autoComplete="off"
-                placeholder="Search any city or place worldwide (e.g. Visakhapatnam, Paris)..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                onFocus={() => {
-                  if (suggestions.length > 0) setIsDropdownOpen(true);
-                }}
-                disabled={isLoading}
-              />
-              {isSearching && <span className="input-spinner" />}
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="clear-search-btn"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSuggestions([]);
-                    setIsDropdownOpen(false);
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Geocoding Results Dropdown */}
-            {isDropdownOpen && suggestions.length > 0 && (
-              <ul className="suggestions-dropdown">
-                {suggestions.map((item, idx) => (
-                  <li
-                    key={`${item.latitude}-${item.longitude}-${idx}`}
-                    className="suggestion-item"
-                    onClick={() => selectPlace(item)}
-                  >
-                    <span className="suggestion-pin">📍</span>
-                    <div className="suggestion-text">
-                      <strong className="suggestion-name">{item.name}</strong>
-                      <span className="suggestion-details">
-                        {[item.region, item.country].filter(Boolean).join(', ')}
-                      </span>
-                    </div>
-                    <span className="suggestion-coords">
-                      {item.latitude.toFixed(2)}°, {item.longitude.toFixed(2)}°
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {isDropdownOpen && suggestions.length === 0 && !isSearching && searchQuery.trim().length >= 2 && (
-              <div className="suggestions-dropdown no-results">
-                No matching locations found.
-              </div>
-            )}
-          </div>
-
-          {/* Start Date */}
-          <div className="form-group">
-            <label htmlFor="start-date">Start Date</label>
-            <input
-              id="start-date"
-              type="date"
-              required
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              disabled={isLoading}
-            />
-          </div>
-
-          {/* End Date */}
-          <div className="form-group">
-            <label htmlFor="end-date">End Date</label>
-            <input
-              id="end-date"
-              type="date"
-              required
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              disabled={isLoading}
-            />
-          </div>
-        </div>
-
-        <div className="form-actions">
-          <button type="submit" className="submit-btn" disabled={isLoading}>
-            {isLoading ? (
-              <span className="btn-loading">
-                <span className="mini-spinner" /> Loading Data...
-              </span>
-            ) : (
-              'Analyze Weather'
-            )}
-          </button>
         </div>
       </form>
     </div>
