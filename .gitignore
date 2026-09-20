@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+
+# Python
+__pycache__/
+.venv/
+
+# Environment variables
+.env
+
+# Output
+output/
+reference/
+
+# OS files
+desktop.ini
