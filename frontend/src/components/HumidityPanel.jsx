@@ -1,17 +1,23 @@
 import React from 'react';
+import { useCountUp } from '../hooks/useCountUp';
 
-export default function HumidityPanel({ daily = [] }) {
-  if (!daily || daily.length === 0) return null;
-
-  const validReadings = daily
-    .map((d) => d.humidity_pct)
-    .filter((h) => h !== null && h !== undefined && !isNaN(h));
+export default function HumidityPanel({ daily = [], live = null }) {
+  const isArr = Array.isArray(daily);
+  const validReadings = isArr
+    ? daily
+        .map((d) => d.humidity_pct)
+        .filter((h) => h !== null && h !== undefined && !isNaN(h))
+    : [];
 
   const hasData = validReadings.length > 0;
 
-  const avgHumidity = hasData
+  const rawAvgHumidity = hasData
     ? Math.round(validReadings.reduce((sum, h) => sum + h, 0) / validReadings.length)
     : null;
+
+  const animatedAvg = useCountUp(rawAvgHumidity, 800, 0);
+
+  if (!daily || daily.length === 0) return null;
 
   const minHumidity = hasData ? Math.round(Math.min(...validReadings)) : null;
   const maxHumidity = hasData ? Math.round(Math.max(...validReadings)) : null;
@@ -23,7 +29,7 @@ export default function HumidityPanel({ daily = [] }) {
     return { label: 'Very Humid', color: '#8b5cf6', tip: 'Sticky, high moisture atmosphere' };
   };
 
-  const comfort = avgHumidity !== null ? getComfortLevel(avgHumidity) : null;
+  const comfort = rawAvgHumidity !== null ? getComfortLevel(rawAvgHumidity) : null;
 
   return (
     <div className="telemetry-card">
@@ -43,45 +49,87 @@ export default function HumidityPanel({ daily = [] }) {
       </div>
 
       {!hasData ? (
-        <div className="telemetry-empty-notice">
-          <p>Humidity data is not available for this date range.</p>
+        <div className="telemetry-body">
+          <div className="telemetry-main-content">
+            <div className="telemetry-empty-notice">
+              <p>Humidity data is not available for this date range.</p>
+            </div>
+          </div>
+          <div className="telemetry-bottom-group">
+            <div className="telemetry-sub-stats">
+              <span className="sub-stat-item">Historical humidity unavailable</span>
+            </div>
+            {live && live.humidity_pct !== undefined && live.humidity_pct !== null ? (
+              <div className="telemetry-live-strip">
+                <span className="live-pulse-dot" />
+                <span className="live-strip-label">Live Now:</span>
+                <span className="live-strip-val">{Math.round(live.humidity_pct)}%</span>
+                <span className="live-strip-sub">
+                  • {getComfortLevel(live.humidity_pct)?.label ?? 'Comfortable'}
+                </span>
+              </div>
+            ) : (
+              <div className="telemetry-live-slot-placeholder" />
+            )}
+          </div>
         </div>
       ) : (
         <div className="telemetry-body">
-          <div className="primary-metric">
-            <span className="metric-number">{avgHumidity}</span>
-            <span className="metric-unit">%</span>
-            <span className="metric-subtitle">Average</span>
+          <div className="telemetry-main-content">
+            <div className="primary-metric">
+              <span className="metric-number">{animatedAvg}</span>
+              <span className="metric-unit">%</span>
+              <span className="metric-subtitle">Average</span>
+            </div>
+
+            <div className="progress-bar-wrapper">
+              <div className="progress-bar-track">
+                <div
+                  className="progress-bar-fill animated-fill"
+                  style={{
+                    width: `${Math.min(Math.max(rawAvgHumidity, 0), 100)}%`,
+                    backgroundColor: comfort.color,
+                  }}
+                />
+              </div>
+              <div className="progress-bar-labels">
+                <span>0%</span>
+                <span>50%</span>
+                <span>100%</span>
+              </div>
+            </div>
           </div>
 
-          <div className="progress-bar-wrapper">
-            <div className="progress-bar-track">
-              <div
-                className="progress-bar-fill"
-                style={{
-                  width: `${Math.min(Math.max(avgHumidity, 0), 100)}%`,
-                  backgroundColor: comfort.color,
-                }}
-              />
-            </div>
-            <div className="progress-bar-labels">
-              <span>0%</span>
-              <span>50%</span>
-              <span>100%</span>
-            </div>
-          </div>
-
-          {minHumidity !== null && maxHumidity !== null && (
+          <div className="telemetry-bottom-group">
             <div className="telemetry-sub-stats">
-              <span className="sub-stat-item">
-                <span className="sub-stat-label">Min:</span> {minHumidity}%
-              </span>
-              <span className="sub-stat-divider">•</span>
-              <span className="sub-stat-item">
-                <span className="sub-stat-label">Max:</span> {maxHumidity}%
-              </span>
+              {minHumidity !== null && maxHumidity !== null ? (
+                <>
+                  <span className="sub-stat-item">
+                    <span className="sub-stat-label">Min:</span> {minHumidity}%
+                  </span>
+                  <span className="sub-stat-divider">•</span>
+                  <span className="sub-stat-item">
+                    <span className="sub-stat-label">Max:</span> {maxHumidity}%
+                  </span>
+                </>
+              ) : (
+                <span className="sub-stat-item">Range humidity unavailable</span>
+              )}
             </div>
-          )}
+
+            {live && live.humidity_pct !== undefined && live.humidity_pct !== null ? (
+              <div className="telemetry-live-strip">
+                <span className="live-pulse-dot" />
+                <span className="live-strip-label">Live Now:</span>
+                <span className="live-strip-val">{Math.round(live.humidity_pct)}%</span>
+                <span className="live-strip-sub">
+                  • {getComfortLevel(live.humidity_pct)?.label ?? 'Comfortable'}
+                </span>
+              </div>
+            ) : (
+              <div className="telemetry-live-slot-placeholder" />
+            )}
+          </div>
         </div>
       )}
     </div>

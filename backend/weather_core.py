@@ -5,6 +5,7 @@ All CLI and Matplotlib plotting dependencies removed.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -42,7 +43,10 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
     pandas.DataFrame with columns:
         date, temp_max_c, temp_min_c, temp_mean_c,
         precipitation_mm, windspeed_max_kmh,
-        sunrise, sunset, uv_index_max, weathercode, humidity_pct
+        wind_speed_max, wind_gusts_max, wind_direction_dominant,
+        precipitation_hours, precipitation_probability, solar_radiation_sum,
+        sunrise, sunset, uv_index_max, weathercode,
+        humidity_pct, feels_like_c, dewpoint_c, cloudcover_pct
     """
     if cache_file and os.path.exists(cache_file):
         return pd.read_csv(cache_file, parse_dates=["date"])
@@ -59,12 +63,22 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
             "temperature_2m_mean",
             "precipitation_sum",
             "windspeed_10m_max",
+            "windgusts_10m_max",
+            "winddirection_10m_dominant",
+            "precipitation_hours",
+            "precipitation_probability_mean",
+            "shortwave_radiation_sum",
             "sunrise",
             "sunset",
             "uv_index_max",
             "weathercode",
         ]),
-        "hourly": "relative_humidity_2m",
+        "hourly": ",".join([
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "dewpoint_2m",
+            "cloudcover",
+        ]),
         "timezone": "auto",
     }
 
@@ -85,26 +99,42 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
         "temp_mean_c": daily.get("temperature_2m_mean"),
         "precipitation_mm": daily.get("precipitation_sum"),
         "windspeed_max_kmh": daily.get("windspeed_10m_max"),
+        "wind_speed_max": daily.get("windspeed_10m_max"),
+        "wind_gusts_max": daily.get("windgusts_10m_max"),
+        "wind_direction_dominant": daily.get("winddirection_10m_dominant"),
+        "precipitation_hours": daily.get("precipitation_hours"),
+        "precipitation_probability": daily.get("precipitation_probability_mean"),
+        "solar_radiation_sum": daily.get("shortwave_radiation_sum"),
         "sunrise": daily.get("sunrise"),
         "sunset": daily.get("sunset"),
         "uv_index_max": daily.get("uv_index_max"),
         "weathercode": weathercode_data,
     })
 
-    # Hourly relative humidity aggregation into daily mean
-    if "hourly" in payload and "time" in payload["hourly"] and "relative_humidity_2m" in payload["hourly"]:
-        hourly_df = pd.DataFrame({
-            "datetime": pd.to_datetime(payload["hourly"]["time"]),
-            "humidity": payload["hourly"]["relative_humidity_2m"],
-        })
-        hourly_df["date"] = pd.to_datetime(hourly_df["datetime"].dt.date)
-        daily_hum = hourly_df.groupby("date")["humidity"].mean().round(1).reset_index()
-        daily_hum.rename(columns={"humidity": "humidity_pct"}, inplace=True)
-        df = pd.merge(df, daily_hum, on="date", how="left")
-    else:
-        df["humidity_pct"] = None
+    # Hourly telemetry aggregation into daily means
+    if "hourly" in payload and "time" in payload["hourly"]:
+        h_data = {"datetime": pd.to_datetime(payload["hourly"]["time"])}
+        if "relative_humidity_2m" in payload["hourly"]:
+            h_data["humidity_pct"] = payload["hourly"]["relative_humidity_2m"]
+        if "apparent_temperature" in payload["hourly"]:
+            h_data["feels_like_c"] = payload["hourly"]["apparent_temperature"]
+        if "dewpoint_2m" in payload["hourly"]:
+            h_data["dewpoint_c"] = payload["hourly"]["dewpoint_2m"]
+        if "cloudcover" in payload["hourly"]:
+            h_data["cloudcover_pct"] = payload["hourly"]["cloudcover"]
 
-    # Overlay live UV Index from Forecast API for overlapping recent dates (~90 days past to +16 days ahead)
+        hourly_df = pd.DataFrame(h_data)
+        hourly_df["date"] = pd.to_datetime(hourly_df["datetime"].dt.date)
+        agg_cols = [c for c in ["humidity_pct", "feels_like_c", "dewpoint_c", "cloudcover_pct"] if c in hourly_df.columns]
+        if agg_cols:
+            daily_agg = hourly_df.groupby("date")[agg_cols].mean().round(1).reset_index()
+            df = pd.merge(df, daily_agg, on="date", how="left")
+
+    for col in ["humidity_pct", "feels_like_c", "dewpoint_c", "cloudcover_pct"]:
+        if col not in df.columns:
+            df[col] = None
+
+    # Overlay live UV Index & precipitation probability from Forecast API for overlapping recent dates (~90 days past to +16 days ahead)
     try:
         min_fore_date = (datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
         max_fore_date = (datetime.today() + timedelta(days=16)).strftime("%Y-%m-%d")
@@ -118,17 +148,21 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
                 "longitude": longitude,
                 "start_date": overlap_start,
                 "end_date": overlap_end,
-                "daily": "uv_index_max",
+                "daily": "uv_index_max,precipitation_probability_mean",
                 "timezone": "auto",
             }
             fore_res = requests.get(fore_url, params=fore_params, timeout=10)
             if fore_res.status_code == 200:
                 fore_daily = fore_res.json().get("daily", {})
+                date_strs = df["date"].dt.strftime("%Y-%m-%d")
                 if "time" in fore_daily and "uv_index_max" in fore_daily:
                     uv_map = dict(zip(pd.to_datetime(fore_daily["time"]).strftime("%Y-%m-%d"), fore_daily["uv_index_max"]))
-                    date_strs = df["date"].dt.strftime("%Y-%m-%d")
                     mapped_uv = date_strs.map(uv_map)
                     df["uv_index_max"] = mapped_uv.combine_first(df["uv_index_max"])
+                if "time" in fore_daily and "precipitation_probability_mean" in fore_daily:
+                    prob_map = dict(zip(pd.to_datetime(fore_daily["time"]).strftime("%Y-%m-%d"), fore_daily["precipitation_probability_mean"]))
+                    mapped_prob = date_strs.map(prob_map)
+                    df["precipitation_probability"] = mapped_prob.combine_first(df["precipitation_probability"])
     except Exception:
         pass
 
@@ -328,6 +362,42 @@ def analyze_trends(df: pd.DataFrame) -> dict:
         for k, v in monthly.items()
     }
 
+    # Total wet days (count of days with precipitation_mm > 0.1)
+    if "precipitation_mm" in df.columns:
+        valid_precip = df["precipitation_mm"].dropna()
+        stats["total_wet_days"] = int((valid_precip > 0.1).sum())
+    else:
+        stats["total_wet_days"] = 0
+
+    # Total precipitation_hours across the period
+    if "precipitation_hours" in df.columns:
+        valid_p_hours = df["precipitation_hours"].dropna()
+        stats["total_precipitation_hours"] = round(float(valid_p_hours.sum()), 1) if not valid_p_hours.empty else None
+    else:
+        stats["total_precipitation_hours"] = None
+
+    # Average wind speed (from wind_speed_max or windspeed_max_kmh)
+    wind_col = "wind_speed_max" if "wind_speed_max" in df.columns else ("windspeed_max_kmh" if "windspeed_max_kmh" in df.columns else None)
+    if wind_col:
+        valid_wind = df[wind_col].dropna()
+        stats["avg_wind_speed"] = round(float(valid_wind.mean()), 2) if not valid_wind.empty else None
+    else:
+        stats["avg_wind_speed"] = None
+
+    # Average cloud cover
+    if "cloudcover_pct" in df.columns:
+        valid_cloud = df["cloudcover_pct"].dropna()
+        stats["avg_cloud_cover"] = round(float(valid_cloud.mean()), 1) if not valid_cloud.empty else None
+    else:
+        stats["avg_cloud_cover"] = None
+
+    # Average solar radiation
+    if "solar_radiation_sum" in df.columns:
+        valid_solar = df["solar_radiation_sum"].dropna()
+        stats["avg_solar_radiation"] = round(float(valid_solar.mean()), 2) if not valid_solar.empty else None
+    else:
+        stats["avg_solar_radiation"] = None
+
     return stats
 
 
@@ -368,3 +438,126 @@ def simple_forecast(df: pd.DataFrame, days_ahead: int = 7) -> pd.DataFrame:
     })
 
     return forecast_df
+
+
+# ----------------------------------------------------------------
+# 6. CURRENT LIVE CONDITIONS
+# ----------------------------------------------------------------
+def get_current_weather(latitude: float, longitude: float) -> dict:
+    """
+    Fetch real-time live current weather conditions and atmospheric telemetry
+    from Open-Meteo Forecast & Air Quality APIs.
+
+    Parameters
+    ----------
+    latitude, longitude : float
+        Coordinates of the location.
+
+    Returns
+    -------
+    dict
+        Current atmospheric telemetry (temperature, feels-like, dewpoint, humidity,
+        precipitation, weathercode, wind speed, gusts, direction, cloud cover,
+        today's UV index & sun times, and live air quality metrics).
+    """
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "current": ",".join([
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "dew_point_2m",
+            "precipitation",
+            "weather_code",
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "cloud_cover",
+            "wind_gusts_10m",
+            "uv_index",
+        ]),
+        "daily": "uv_index_max,sunrise,sunset",
+        "forecast_days": 1,
+        "timezone": "auto",
+    }
+
+    aq_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    aq_params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "current": "european_aqi,us_aqi,pm2_5,pm10",
+        "timezone": "auto",
+    }
+
+    def _fetch_forecast():
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def _fetch_aq():
+        try:
+            r = requests.get(aq_url, params=aq_params, timeout=10)
+            if r.status_code == 200:
+                aq_json = r.json()
+                aq_cur = aq_json.get("current", {})
+                return {
+                    "time": aq_cur.get("time"),
+                    "timezone": aq_json.get("timezone"),
+                    "timezone_abbreviation": aq_json.get("timezone_abbreviation"),
+                    "european_aqi": aq_cur.get("european_aqi"),
+                    "us_aqi": aq_cur.get("us_aqi"),
+                    "pm2_5": aq_cur.get("pm2_5"),
+                    "pm10": aq_cur.get("pm10"),
+                }
+        except Exception as e:
+            print(f"[LIVE AQ WARNING] Failed to fetch live air quality: {e}")
+        return {}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_future = executor.submit(_fetch_forecast)
+        aq_future = executor.submit(_fetch_aq)
+        data = f_future.result()
+        aq_data = aq_future.result()
+
+    print(f"[LIVE FETCH {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Direct request to Open-Meteo for lat={latitude}, lon={longitude} (gen_time: {data.get('generationtime_ms', 0):.3f}ms)")
+
+    cur = data.get("current", {})
+    daily = data.get("daily", {})
+
+    temp_c = cur.get("temperature_2m")
+    temp_f = round((temp_c * 9 / 5 + 32), 1) if temp_c is not None else None
+    feels_c = cur.get("apparent_temperature")
+    feels_f = round((feels_c * 9 / 5 + 32), 1) if feels_c is not None else None
+    dew_c = cur.get("dew_point_2m")
+    dew_f = round((dew_c * 9 / 5 + 32), 1) if dew_c is not None else None
+
+    uv_today = daily.get("uv_index_max", [None])[0] if daily.get("uv_index_max") else None
+    sunrise_today = daily.get("sunrise", [None])[0] if daily.get("sunrise") else None
+    sunset_today = daily.get("sunset", [None])[0] if daily.get("sunset") else None
+
+    return {
+        "time": cur.get("time"),
+        "timezone": data.get("timezone"),
+        "timezone_abbreviation": data.get("timezone_abbreviation"),
+        "temperature_c": temp_c,
+        "temperature_f": temp_f,
+        "feels_like_c": feels_c,
+        "feels_like_f": feels_f,
+        "dewpoint_c": dew_c,
+        "dewpoint_f": dew_f,
+        "humidity_pct": cur.get("relative_humidity_2m"),
+        "precipitation_mm": cur.get("precipitation"),
+        "weathercode": cur.get("weather_code"),
+        "wind_speed_kmh": cur.get("wind_speed_10m"),
+        "wind_gusts_kmh": cur.get("wind_gusts_10m"),
+        "wind_direction": cur.get("wind_direction_10m"),
+        "cloud_cover_pct": cur.get("cloud_cover"),
+        "uv_index": cur.get("uv_index"),
+        "uv_index_live": cur.get("uv_index"),
+        "uv_index_today": uv_today,
+        "sunrise_today": sunrise_today,
+        "sunset_today": sunset_today,
+        "air_quality": aq_data,
+    }
+

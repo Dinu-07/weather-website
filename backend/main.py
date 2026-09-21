@@ -4,7 +4,7 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from weather_core import (
@@ -13,6 +13,7 @@ from weather_core import (
     clean_data,
     fetch_air_quality,
     fetch_weather_data,
+    get_current_weather,
     simple_forecast,
 )
 
@@ -110,6 +111,26 @@ def get_forecast(
         return {
             "forecast": forecast_records,
         }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/current")
+def get_current(
+    response: Response,
+    lat: float = Query(..., description="Latitude coordinate"),
+    lon: float = Query(..., description="Longitude coordinate"),
+):
+    """
+    Retrieve live real-time current weather conditions from Open-Meteo Forecast API.
+    Guaranteed fresh on every call (no-cache headers added).
+    """
+    try:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        current_data = get_current_weather(lat, lon)
+        return current_data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

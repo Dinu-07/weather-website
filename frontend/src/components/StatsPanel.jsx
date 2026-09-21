@@ -1,22 +1,26 @@
 import React from 'react';
+import { useCountUp } from '../hooks/useCountUp';
 
 export default function StatsPanel({ stats }) {
+  const animatedAvg = useCountUp(stats?.avg_temp_c, 800, 1);
+  const animatedMax = useCountUp(stats?.max_temp_c, 800, 1);
+  const animatedMin = useCountUp(stats?.min_temp_c, 800, 1);
+  const animatedStd = useCountUp(stats?.std_temp_c, 800, 1);
+
   if (!stats) return null;
 
   const {
     start_date,
     end_date,
     num_days,
-    avg_temp_c,
-    max_temp_c,
-    min_temp_c,
-    std_temp_c,
     trend_slope_c_per_day,
     trend_direction,
   } = stats;
 
   const toFahrenheit = (c) =>
-    c !== null && c !== undefined ? `${((c * 9) / 5 + 32).toFixed(1)}°F` : '--';
+    c !== null && c !== undefined && !isNaN(c)
+      ? `${((Number(c) * 9) / 5 + 32).toFixed(1)}°F`
+      : '--';
 
   const isWarming = trend_direction?.toLowerCase() === 'warming';
   const isCooling = trend_direction?.toLowerCase() === 'cooling';
@@ -61,11 +65,11 @@ export default function StatsPanel({ stats }) {
             Mean Temperature
           </div>
           <div className="stat-card-main-val">
-            {avg_temp_c !== null && avg_temp_c !== undefined ? avg_temp_c.toFixed(1) : '--'}
+            {animatedAvg !== null ? animatedAvg : '--'}
             <span className="stat-card-unit">°C</span>
           </div>
           <div className="stat-card-secondary-val">
-            {toFahrenheit(avg_temp_c)}
+            {toFahrenheit(animatedAvg)}
           </div>
         </div>
 
@@ -75,11 +79,11 @@ export default function StatsPanel({ stats }) {
             Peak High
           </div>
           <div className="stat-card-main-val">
-            {max_temp_c !== null && max_temp_c !== undefined ? max_temp_c.toFixed(1) : '--'}
+            {animatedMax !== null ? animatedMax : '--'}
             <span className="stat-card-unit">°C</span>
           </div>
           <div className="stat-card-secondary-val">
-            {toFahrenheit(max_temp_c)}
+            {toFahrenheit(animatedMax)}
           </div>
         </div>
 
@@ -89,11 +93,11 @@ export default function StatsPanel({ stats }) {
             Trough Low
           </div>
           <div className="stat-card-main-val">
-            {min_temp_c !== null && min_temp_c !== undefined ? min_temp_c.toFixed(1) : '--'}
+            {animatedMin !== null ? animatedMin : '--'}
             <span className="stat-card-unit">°C</span>
           </div>
           <div className="stat-card-secondary-val">
-            {toFahrenheit(min_temp_c)}
+            {toFahrenheit(animatedMin)}
           </div>
         </div>
 
@@ -103,7 +107,7 @@ export default function StatsPanel({ stats }) {
             Std Deviation
           </div>
           <div className="stat-card-main-val">
-            {std_temp_c !== null && std_temp_c !== undefined ? `±${std_temp_c.toFixed(1)}` : '--'}
+            {animatedStd !== null ? `±${animatedStd}` : '--'}
             <span className="stat-card-unit">°C</span>
           </div>
           <div className="stat-card-secondary-val">

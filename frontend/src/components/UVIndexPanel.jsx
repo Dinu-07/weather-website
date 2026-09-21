@@ -1,4 +1,5 @@
 import React from 'react';
+import { useCountUp } from '../hooks/useCountUp';
 
 const UV_BANDS = [
   { label: 'Low', range: '0-2', min: 0, max: 2.99, color: '#10b981' },
@@ -13,21 +14,52 @@ function getUVBand(value) {
   return UV_BANDS.find((b) => value >= b.min && value <= b.max) || UV_BANDS[UV_BANDS.length - 1];
 }
 
-export default function UVIndexPanel({ daily = [] }) {
-  if (!daily || daily.length === 0) return null;
-
-  const validReadings = daily
-    .map((d) => d.uv_index_max)
-    .filter((uv) => uv !== null && uv !== undefined && !isNaN(uv));
+export default function UVIndexPanel({ daily = [], live = null }) {
+  const validReadings = Array.isArray(daily)
+    ? daily
+        .map((d) => d.uv_index_max)
+        .filter((uv) => uv !== null && uv !== undefined && !isNaN(uv))
+    : [];
 
   const hasData = validReadings.length > 0;
 
-  const maxUV = hasData ? Math.max(...validReadings) : null;
-  const avgUV = hasData
+  const rawMaxUV = hasData ? Math.max(...validReadings) : null;
+  const rawAvgUV = hasData
     ? +(validReadings.reduce((sum, uv) => sum + uv, 0) / validReadings.length).toFixed(1)
     : null;
 
-  const currentBand = hasData ? getUVBand(maxUV) : null;
+  const animatedMaxUV = useCountUp(rawMaxUV, 800, 1);
+  const animatedAvgUV = useCountUp(rawAvgUV, 800, 1);
+
+  if (!daily || daily.length === 0) return null;
+
+  const liveUV = live?.uv_index_live ?? live?.uv_index;
+  const todayPeakUV = live?.uv_index_today;
+  const hasLiveUV = liveUV !== undefined && liveUV !== null;
+  const hasPeakUV = todayPeakUV !== undefined && todayPeakUV !== null;
+  const liveUVBand = hasLiveUV ? getUVBand(liveUV) : null;
+  const todayPeakBand = hasPeakUV ? getUVBand(todayPeakUV) : null;
+
+  const currentBand = hasData ? getUVBand(rawMaxUV) : (liveUVBand ?? todayPeakBand);
+
+  const renderLiveUVSection = () => {
+    if (!hasLiveUV && !hasPeakUV) {
+      return <div className="telemetry-live-slot-placeholder" />;
+    }
+    return (
+      <div className="telemetry-live-strip">
+        <span className="live-pulse-dot" />
+        <span className="live-strip-label">Live Now:</span>
+        <span className="live-strip-val">{hasLiveUV ? Number(liveUV).toFixed(1) : '--'}</span>
+        {liveUVBand && (
+          <span className="live-strip-sub">({liveUVBand.label})</span>
+        )}
+        {hasPeakUV && (
+          <span className="live-strip-sub">• Peak: {Number(todayPeakUV).toFixed(1)}</span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="telemetry-card">
@@ -47,43 +79,76 @@ export default function UVIndexPanel({ daily = [] }) {
       </div>
 
       {!hasData ? (
-        <div className="telemetry-empty-notice">
-          <span className="notice-icon">ℹ️</span>
-          <p>
-            UV Index isn't available for historical dates (Open-Meteo's archive doesn't include this field for past dates).
-          </p>
+        <div className="telemetry-body">
+          <div className="telemetry-main-content">
+            <div className="telemetry-empty-notice">
+              <span className="notice-icon">ℹ️</span>
+              <p>
+                UV Index isn't available for historical dates (Open-Meteo's archive doesn't include this field for past dates).
+              </p>
+            </div>
+          </div>
+          <div className="telemetry-bottom-group">
+            <div className="telemetry-sub-stats">
+              <span className="sub-stat-item">Historical UV not in archive</span>
+            </div>
+            {renderLiveUVSection()}
+          </div>
         </div>
       ) : (
         <div className="telemetry-body">
-          <div className="primary-metric">
-            <span className="metric-number">{maxUV.toFixed(1)}</span>
-            <span className="metric-subtitle">Peak UV</span>
-            {avgUV !== null && (
-              <span className="metric-secondary-badge">Avg: {avgUV}</span>
-            )}
+          <div className="telemetry-main-content">
+            <div className="primary-metric">
+              <span className="metric-number">{animatedMaxUV}</span>
+              <span className="metric-subtitle">Peak UV</span>
+              {rawAvgUV !== null && (
+                <span className="metric-secondary-badge">Avg: {animatedAvgUV}</span>
+              )}
+            </div>
+
+            {/* Flat 5-block color scale */}
+            <div className="uv-scale-container">
+              <div className="uv-blocks-grid">
+                {UV_BANDS.map((band, idx) => {
+                  const isActive = currentBand?.label === band.label;
+                  return (
+                    <div
+                      key={band.label}
+                      className={`uv-scale-block ${isActive ? 'active-block' : ''}`}
+                      style={{
+                        backgroundColor: isActive ? band.color : `${band.color}25`,
+                        color: isActive ? '#ffffff' : band.color,
+                        borderColor: band.color,
+                        animationDelay: `${idx * 60}ms`,
+                      }}
+                    >
+                      <span className="block-label">{band.label}</span>
+                      <span className="block-range">{band.range}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          {/* Flat 5-block color scale */}
-          <div className="uv-scale-container">
-            <div className="uv-blocks-grid">
-              {UV_BANDS.map((band) => {
-                const isActive = currentBand?.label === band.label;
-                return (
-                  <div
-                    key={band.label}
-                    className={`uv-scale-block ${isActive ? 'active-block' : ''}`}
-                    style={{
-                      backgroundColor: isActive ? band.color : `${band.color}25`,
-                      color: isActive ? '#ffffff' : band.color,
-                      borderColor: band.color,
-                    }}
-                  >
-                    <span className="block-label">{band.label}</span>
-                    <span className="block-range">{band.range}</span>
-                  </div>
-                );
-              })}
+          <div className="telemetry-bottom-group">
+            <div className="telemetry-sub-stats">
+              {rawAvgUV !== null ? (
+                <>
+                  <span className="sub-stat-item">
+                    <span className="sub-stat-label">Period Avg:</span> {animatedAvgUV}
+                  </span>
+                  <span className="sub-stat-divider">•</span>
+                  <span className="sub-stat-item">
+                    <span className="sub-stat-label">Exposure:</span> {currentBand?.label ?? '--'}
+                  </span>
+                </>
+              ) : (
+                <span className="sub-stat-item">Historical UV not in archive</span>
+              )}
             </div>
+
+            {renderLiveUVSection()}
           </div>
         </div>
       )}

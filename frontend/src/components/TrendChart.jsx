@@ -95,6 +95,27 @@ export default function TrendChart({ daily = [] }) {
       mode: 'index',
       intersect: false,
     },
+    animation: {
+      x: {
+        type: 'number',
+        easing: 'easeOutQuart',
+        duration: 900,
+        from: NaN,
+        delay(ctx) {
+          if (ctx.type !== 'data' || ctx.xStarted) {
+            return 0;
+          }
+          ctx.xStarted = true;
+          const totalPoints = daily.length || 30;
+          return ctx.index * Math.min(850 / Math.max(totalPoints, 1), 25);
+        },
+      },
+      y: {
+        type: 'number',
+        easing: 'easeOutQuart',
+        duration: 700,
+      },
+    },
     plugins: {
       title: {
         display: true,
