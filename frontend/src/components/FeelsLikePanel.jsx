@@ -72,7 +72,7 @@ export default function FeelsLikePanel({ daily = [], stats = null, live = null }
             className="card-status-pill"
             style={{ backgroundColor: `${dewComfort.color}18`, color: dewComfort.color }}
           >
-            Dewpoint: {dewComfort.label}
+            {dewComfort.label}
           </span>
         )}
       </div>

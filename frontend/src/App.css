@@ -1082,7 +1082,7 @@
 ---------------------------------------------------------------- */
 .telemetry-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
 }
 
@@ -1090,13 +1090,13 @@
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  min-height: 256px;
+  min-height: 265px;
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
 }
@@ -1104,45 +1104,47 @@
 .card-top-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  height: 28px;
-  min-height: 28px;
-  margin-bottom: 12px;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 36px;
+  margin-bottom: 10px;
   flex-shrink: 0;
 }
 
 .card-icon-title {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 7px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .card-icon {
-  font-size: 18px;
+  font-size: 17px;
   flex-shrink: 0;
-  line-height: 1;
+  line-height: 1.25;
+  margin-top: 1px;
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.35;
   color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .card-status-pill {
   font-size: 11px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
   padding: 3px 8px;
   border-radius: 9999px;
   flex-shrink: 0;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  align-self: flex-start;
 }
 
 .telemetry-empty-notice {
@@ -1179,14 +1181,14 @@
   gap: 8px;
   flex: 1 1 auto;
   justify-content: flex-start;
-  min-height: 84px;
+  min-height: 78px;
 }
 
 .telemetry-bottom-group {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
   width: 100%;
 }
@@ -1264,65 +1266,55 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Secondary Stat Row: Fixed min-height & truncation */
+/* Secondary Stat Row: Consistent min-height, allows natural wrap without truncation */
 .telemetry-sub-stats {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  height: 24px;
-  max-height: 24px;
-  font-size: 12px;
-  line-height: 24px;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  min-height: 28px;
+  font-size: 11.5px;
+  line-height: 1.4;
   color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   width: 100%;
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
 }
 
 .telemetry-sub-stats .sub-stat-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 24px;
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 
 .telemetry-sub-stats .sub-stat-label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  margin-right: 3px;
 }
 
 .telemetry-sub-stats .sub-stat-divider {
   color: var(--border-medium);
   flex-shrink: 0;
-  margin: 0 2px;
+  margin: 0 1px;
 }
 
-/* Telemetry "Live Now" Indicator Strip: Uniform position & size */
+/* Telemetry "Live Now" Indicator Strip: Multi-line flexible, never truncated */
 .telemetry-live-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 3px 6px;
   background: rgba(16, 185, 129, 0.08);
   border: 1px solid rgba(16, 185, 129, 0.22);
   border-radius: 8px;
-  padding: 0 10px;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
-  font-size: 12px;
-  line-height: 34px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 6px 10px;
+  min-height: 36px;
+  font-size: 11.5px;
+  line-height: 1.4;
   width: 100%;
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
@@ -1334,9 +1326,7 @@
 }
 
 .telemetry-live-slot-placeholder {
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
+  min-height: 36px;
   width: 100%;
   box-sizing: border-box;
   visibility: hidden;
@@ -1350,6 +1340,7 @@
   box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
   animation: livePulse 2s ease-in-out infinite;
   flex-shrink: 0;
+  margin-right: 2px;
 }
 
 .live-strip-label {
@@ -1358,27 +1349,24 @@
   font-size: 11px;
   letter-spacing: 0.3px;
   flex-shrink: 0;
-  line-height: 34px;
+  line-height: 1.35;
 }
 
 .live-strip-val {
   font-weight: 700;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 11.5px;
   flex-shrink: 0;
-  line-height: 34px;
+  line-height: 1.35;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .live-strip-sub {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 11px;
-  line-height: 34px;
+  line-height: 1.35;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
-  min-width: 0;
 }
 
 /* UV Index Flat Color Blocks */
@@ -1653,13 +1641,10 @@
 }
 
 .precip-headline {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text-primary);
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
 }
 
 .precip-highlight {
@@ -1729,14 +1714,13 @@
   color: var(--text-secondary);
   line-height: 1.35;
   background: var(--bg-card-subtle);
-  padding: 5px 10px;
+  padding: 6px 10px;
   border-radius: 6px;
   border-left: 3px solid #0284c7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
   box-sizing: border-box;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .note-bullet {
