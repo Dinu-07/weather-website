@@ -58,6 +58,11 @@
   --lottie-opacity: 0.22;
 }
 
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
 * {
   box-sizing: border-box;
 }

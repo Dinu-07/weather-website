@@ -57,12 +57,12 @@ export default function SplashScreen({ theme = 'light', onFinish }) {
       aria-label="Loading WeatherPulse"
     >
       <div className="splash-content-box">
-        {/* Animated WeatherPulse Mark (96-120px wide) */}
+        {/* Animated WeatherPulse Mark (120-150px wide) */}
         <div className="splash-mark-wrapper">
           <WeatherPulseMark
             theme={theme}
             animated={true}
-            width={110}
+            width={135}
             className="splash-logo-mark"
           />
         </div>

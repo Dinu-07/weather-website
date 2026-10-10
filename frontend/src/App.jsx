@@ -21,6 +21,7 @@ import WaterDroplets from './components/WaterDroplets';
 import CurrentConditionsPanel from './components/CurrentConditionsPanel';
 import WeatherPulseLogo from './components/WeatherPulseLogo';
 import SplashScreen from './components/SplashScreen';
+import Hero, { CONDITION_METADATA } from './components/Hero';
 import { reverseGeocode } from './utils/reverseGeocode';
 
 import sunnyAnim from './assets/lottie/sunny.json';
@@ -108,6 +109,12 @@ export default function App() {
 
   // Splash screen completion state (fires onFinish callback)
   const [splashDone, setSplashDone] = useState(false);
+
+  // Hero entrance animation completion state (fires after entrance finishes)
+  const [heroEntranceDone, setHeroEntranceDone] = useState(false);
+
+  // Featured condition preview state (null = show live condition, or string from CONDITIONS_ORDER)
+  const [previewCondition, setPreviewCondition] = useState(null);
 
   // Sync theme to document root and meta theme-color
   useEffect(() => {
@@ -223,9 +230,9 @@ export default function App() {
     fetchCurrentConditions(17.08, 82.13);
   };
 
-  // Flow on page load: wait for splashDone
+  // Flow on page load: wait for splashDone AND heroEntranceDone
   useEffect(() => {
-    if (!splashDone) return;
+    if (!splashDone || !heroEntranceDone) return;
     if (geoRequestedRef.current) return;
     geoRequestedRef.current = true;
 
@@ -320,7 +327,7 @@ export default function App() {
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     };
-  }, [splashDone]);
+  }, [splashDone, heroEntranceDone]);
 
   const weatherDetails = getWeatherDetails(stats?.dominant_weathercode);
   const isRainyPeriod = Boolean(
@@ -366,6 +373,17 @@ export default function App() {
       ? 1
       : (stats?.num_days ?? 1);
 
+  const previewDetails = previewCondition ? CONDITION_METADATA[previewCondition] : null;
+  const activeAmbientWeathercode = previewDetails ? previewDetails.weathercode : ambientWeathercode;
+
+  const activeCloudCover = previewDetails
+    ? (previewDetails.key === 'clear' ? 10 : previewDetails.key === 'cloudy' ? 85 : previewDetails.key === 'fog' ? 80 : 90)
+    : ambientCloudCover;
+
+  const activeTotalWetDays = previewDetails
+    ? (['rain', 'storm'].includes(previewDetails.key) ? 1 : 0)
+    : ambientTotalWetDays;
+
   return (
     <div className="google-weather-app" data-theme={theme}>
       {/* Branded Splash Screen on initial page load */}
@@ -379,15 +397,29 @@ export default function App() {
       {/* Fixed Full-Viewport Ambient Weather Background Layer (particles paused until splash finishes) */}
       <FullPageAmbientBackground
         theme={theme}
-        weathercode={ambientWeathercode}
-        cloudCover={ambientCloudCover}
-        totalWetDays={ambientTotalWetDays}
+        weathercode={activeAmbientWeathercode}
+        cloudCover={activeCloudCover}
+        totalWetDays={activeTotalWetDays}
         totalDays={ambientTotalDays}
         windSpeed={ambientWindSpeed}
         isPlaying={isAnimationPlaying && splashDone}
       />
 
-      <div className="feed-container">
+      {/* Dark Contrast Overlay for Ambient Sky Layer (meets 4.5:1 text contrast) */}
+      <div className="hero-backdrop-contrast-overlay" aria-hidden="true" />
+
+      {/* Full-Viewport Cinematic Branded Hero */}
+      <Hero
+        theme={theme}
+        currentWeather={currentWeather}
+        locationName={currentLocationName}
+        splashDone={splashDone}
+        onEntranceFinish={() => setHeroEntranceDone(true)}
+        previewCondition={previewCondition}
+        onPreviewChange={(cond) => setPreviewCondition(cond)}
+      />
+
+      <div className="feed-container" id="dashboard">
         {/* Top App Bar */}
         <header className="app-top-bar">
           <div className="brand-lockup">
@@ -411,7 +443,7 @@ export default function App() {
         </header>
 
         {/* Pill-shaped Location Search Bar */}
-        <section className="search-section">
+        <section className="search-section" id="search-section">
           <LocationForm
             onSubmit={(params) => {
               userSelectedRef.current = true;
@@ -537,7 +569,7 @@ export default function App() {
             </section>
 
             {/* Telemetry Group 1: Comfort & Atmosphere */}
-            <section className="telemetry-section-group stagger-card stagger-delay-3">
+            <section className="telemetry-section-group stagger-card stagger-delay-3" id="telemetry-section">
               <div className="telemetry-group-header">
                 <h4 className="telemetry-group-title">Comfort & Atmosphere</h4>
               </div>
@@ -563,7 +595,7 @@ export default function App() {
             </section>
 
             {/* Charts Deck */}
-            <section className="charts-feed stagger-card stagger-delay-5">
+            <section className="charts-feed stagger-card stagger-delay-5" id="trends-section">
               <div className="weather-card chart-full-card">
                 <TrendChart daily={daily} />
               </div>
@@ -572,7 +604,7 @@ export default function App() {
                 <div className="weather-card">
                   <Histogram daily={daily} stats={stats} />
                 </div>
-                <div className="weather-card">
+                <div className="weather-card" id="forecast-section">
                   <ForecastChart daily={daily} forecast={forecast} />
                 </div>
               </div>
