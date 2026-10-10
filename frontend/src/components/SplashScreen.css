@@ -1,0 +1,263 @@
+/* ================================================================
+   WEATHERPULSE BRANDED SPLASH SCREEN
+   Full-viewport branded launch overlay with pulse-trace line drawing
+   ================================================================ */
+
+.splash-screen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999; /* Highest z-index above ambient background and UI */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  user-select: none;
+  animation: splashOverlayFadeOut 0.4s ease-out 2.0s forwards;
+  will-change: opacity, visibility;
+}
+
+/* Theme backgrounds and foregrounds */
+.splash-screen-overlay.light-theme {
+  background-color: #DDEBFA;
+  color: #1D3557;
+}
+
+.splash-screen-overlay.dark-theme {
+  background-color: #232C4D;
+  color: #F2EFE8;
+}
+
+.splash-content-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.splash-mark-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+
+.weatherpulse-mark {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
+}
+
+/* ----------------------------------------------------------------
+   ANIMATION TIMELINE (CSS keyframes only)
+---------------------------------------------------------------- */
+
+/* 1. W Zigzag Path: 0.0s - 0.7s */
+.splash-mark-w {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: drawW 0.7s cubic-bezier(0.4, 0, 0.2, 1) 0s forwards;
+  will-change: stroke-dashoffset;
+}
+
+@keyframes drawW {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 2. P Stem Path: 0.7s - 0.9s */
+.splash-mark-p {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: drawP 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0.7s forwards;
+  will-change: stroke-dashoffset;
+}
+
+@keyframes drawP {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 3. Amber Dot: 0.85s - 1.15s (scale 0 -> 1.15 -> 1) */
+.splash-amber-dot {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+  animation: dotPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.85s forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes dotPop {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  1% {
+    opacity: 1;
+    transform: scale(0);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 4. Ripple Ring: 1.0s - 1.6s expands from dot and fades out */
+.splash-ripple-ring {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(1);
+  animation: rippleExpand 0.6s cubic-bezier(0.1, 0.4, 0.2, 1) 1.0s forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes rippleExpand {
+  0% {
+    opacity: 0.65;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/* 5. Wordmark: 0.9s - 1.4s fades in while sliding up ~8px */
+.splash-wordmark {
+  margin: 0 0 8px 0;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: wordmarkSlideUp 0.5s ease-out 0.9s forwards;
+  will-change: transform, opacity;
+}
+
+.splash-screen-overlay.light-theme .splash-wordmark {
+  color: #1D3557;
+}
+
+.splash-screen-overlay.dark-theme .splash-wordmark {
+  color: #F2EFE8;
+}
+
+@keyframes wordmarkSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 6. Tagline: 1.2s - 1.6s fades in */
+.splash-tagline {
+  margin: 0;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.1px;
+  line-height: 1.4;
+  opacity: 0;
+  animation: taglineFadeIn 0.4s ease-out 1.2s forwards;
+  will-change: opacity;
+}
+
+.splash-screen-overlay.light-theme .splash-tagline {
+  color: #46536E;
+}
+
+.splash-screen-overlay.dark-theme .splash-tagline {
+  color: #B9C3E0;
+}
+
+@keyframes taglineFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* 7. Whole Overlay Fadeout: 2.0s - 2.4s */
+@keyframes splashOverlayFadeOut {
+  0% {
+    opacity: 1;
+    visibility: visible;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* ----------------------------------------------------------------
+   ACCESSIBILITY: prefers-reduced-motion
+---------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .splash-screen-overlay {
+    animation: splashOverlayFadeOutReduced 0.3s ease-out 0.9s forwards !important;
+  }
+
+  .splash-mark-w,
+  .splash-mark-p {
+    stroke-dashoffset: 0 !important;
+    animation: none !important;
+  }
+
+  .splash-amber-dot {
+    opacity: 1 !important;
+    transform: scale(1) !important;
+    animation: none !important;
+  }
+
+  .splash-ripple-ring {
+    display: none !important;
+  }
+
+  .splash-wordmark,
+  .splash-tagline {
+    transform: none !important;
+    animation: reducedFadeIn 0.3s ease-out 0.1s forwards !important;
+  }
+}
+
+@keyframes reducedFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes splashOverlayFadeOutReduced {
+  0% {
+    opacity: 1;
+    visibility: visible;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}

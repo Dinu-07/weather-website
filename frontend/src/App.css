@@ -37,25 +37,39 @@
   gap: 12px;
 }
 
-.brand-weather-icon {
-  font-size: 30px;
-  line-height: 1;
+.weatherpulse-hero-logo {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
-.brand-title {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.5px;
-  margin: 0;
-  color: var(--text-primary);
+.weatherpulse-hero-logo:hover {
+  transform: scale(1.02);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 .brand-badge {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
+  letter-spacing: 0.1px;
   color: var(--text-muted);
-  display: block;
-  margin-top: 1px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
 }
 
 .theme-toggle-btn {
@@ -102,147 +116,99 @@
 }
 
 /* ----------------------------------------------------------------
-   GEOLOCATION PROMPT & FEEDBACK BANNER
+   SEARCH PILL LOCATION (CROSSHAIR) BUTTON & TOAST
 ---------------------------------------------------------------- */
-.geo-prompt-banner {
-  display: flex;
+.pill-location-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9999px;
-  padding: 8px 16px;
-  box-shadow: var(--shadow-sm);
-  animation: geoFadeIn 0.25s ease-out;
-  transition: all 0.2s ease;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
 }
 
-@keyframes geoFadeIn {
+.pill-location-btn:hover:not(:disabled) {
+  color: #0284c7;
+  background-color: var(--bg-hover);
+}
+
+.pill-location-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.pill-location-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.crosshair-icon {
+  display: block;
+}
+
+.pill-spinner-location {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: #0284c7;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* Auto-dismissing Location Blocked Toast */
+.location-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 90vw;
+  width: max-content;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-medium);
+  border-radius: 9999px;
+  padding: 10px 18px;
+  box-shadow: var(--shadow-md), 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  animation: toastSlideUp 0.25s ease-out;
+}
+
+@keyframes toastSlideUp {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translate(-50%, 12px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(-50%, 0);
   }
 }
 
-.geo-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.geo-banner-icon {
+.toast-icon {
   font-size: 15px;
   flex-shrink: 0;
   line-height: 1;
 }
 
-.geo-banner-text {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.toast-text {
+  flex: 1;
 }
 
-.geo-banner-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.geo-btn-allow {
-  background: #0284c7;
-  color: #ffffff;
-  border: none;
-  border-radius: 9999px;
-  padding: 5px 14px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  box-shadow: var(--shadow-sm);
-  transition: background-color 0.15s ease, transform 0.1s ease;
-}
-
-.geo-btn-allow:hover:not(:disabled) {
-  background: #0369a1;
-}
-
-.geo-btn-allow:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.geo-btn-allow:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.geo-loading-flex {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.geo-btn-dismiss {
-  background: transparent;
-  color: var(--text-muted);
-  border: none;
-  border-radius: 9999px;
-  padding: 5px 10px;
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
-}
-
-.geo-btn-dismiss:hover:not(:disabled) {
-  color: var(--text-primary);
-  background-color: var(--bg-hover);
-}
-
-.geo-btn-dismiss:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Feedback message banner (e.g. permission denied) */
-.geo-banner-feedback {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  background: var(--bg-card-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9999px;
-  padding: 8px 16px;
-  box-shadow: var(--shadow-sm);
-  animation: geoFadeIn 0.25s ease-out;
-}
-
-.geo-feedback-text {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.geo-feedback-close {
+.toast-close-btn {
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -254,35 +220,12 @@
   align-items: center;
   justify-content: center;
   transition: color 0.15s ease, background-color 0.15s ease;
+  margin-left: 4px;
 }
 
-.geo-feedback-close:hover {
+.toast-close-btn:hover {
   color: var(--text-primary);
   background-color: var(--bg-hover);
-}
-
-@media (max-width: 600px) {
-  .geo-prompt-banner {
-    border-radius: 14px;
-    padding: 10px 14px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .geo-banner-content {
-    justify-content: center;
-  }
-  .geo-banner-text {
-    white-space: normal;
-    text-align: center;
-  }
-  .geo-banner-actions {
-    justify-content: center;
-  }
-  .geo-banner-feedback {
-    border-radius: 14px;
-    padding: 10px 14px;
-  }
 }
 
 .pill-search-container {

@@ -4,7 +4,29 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Weather</title>
+    <title>WeatherPulse — Historical &amp; Forecast</title>
+    <meta name="description" content="WeatherPulse — Live atmospheric telemetry, full-range historical climate analytics, and high-precision weather forecasts." />
+    <meta property="og:title" content="WeatherPulse — Historical &amp; Forecast" />
+    <meta property="og:site_name" content="WeatherPulse" />
+    <meta property="og:description" content="Live atmospheric telemetry, full-range historical climate analytics, and high-precision weather forecasts." />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#DDEBFA" id="meta-theme-color" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('theme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = (saved === 'light' || saved === 'dark') ? saved : (prefersDark ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+          var bg = theme === 'dark' ? '#232C4D' : '#DDEBFA';
+          document.documentElement.style.backgroundColor = bg;
+          var metaTheme = document.querySelector('meta[name="theme-color"]');
+          if (metaTheme) {
+            metaTheme.setAttribute('content', bg);
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">

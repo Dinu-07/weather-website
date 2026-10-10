@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { reverseGeocode } from '../utils/reverseGeocode';
 
 const PRESETS = [
   { name: 'Peddapuram', fullName: 'Peddapuram, Andhra Pradesh, India', lat: 17.08, lon: 82.13 },
@@ -8,52 +9,26 @@ const PRESETS = [
   { name: 'Tokyo', fullName: 'Tokyo, Tokyo, Japan', lat: 35.6762, lon: 139.6503 },
 ];
 
-const GEO_DISMISSED_KEY = 'weather_geo_prompt_dismissed';
-
-function getSessionDismissed() {
-  try {
-    return sessionStorage.getItem(GEO_DISMISSED_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function setSessionDismissed() {
-  try {
-    sessionStorage.setItem(GEO_DISMISSED_KEY, 'true');
-  } catch {
-    // Ignore storage errors in restricted contexts
-  }
-}
-
-function formatBigDataCloudLocation(data, lat, lon) {
-  if (!data) return `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
-  const primaryName = data.city || data.locality || data.principalSubdivision || '';
-  const subdivision =
-    data.principalSubdivision && data.principalSubdivision !== primaryName
-      ? data.principalSubdivision
-      : '';
-  const country =
-    data.countryName && data.countryName !== primaryName && data.countryName !== subdivision
-      ? data.countryName
-      : !primaryName
-        ? data.countryName || ''
-        : '';
-  const parts = [primaryName, subdivision, country].filter(Boolean);
-  return parts.length > 0 ? parts.join(', ') : `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
-}
-
-export default function LocationForm({ onSubmit, isLoading }) {
+export default function LocationForm({
+  onSubmit,
+  isLoading,
+  currentLocationName = 'Peddapuram, Andhra Pradesh, India',
+}) {
   const [selectedLocation, setSelectedLocation] = useState({
     name: 'Peddapuram',
     fullName: 'Peddapuram, Andhra Pradesh, India',
     lat: 17.08,
     lon: 82.13,
   });
-  const [searchQuery, setSearchQuery] = useState('Peddapuram, Andhra Pradesh, India');
+  const [searchQuery, setSearchQuery] = useState(currentLocationName);
   const [suggestions, setSuggestions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Crosshair recovery state
+  const [isLocating, setIsLocating] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
+
   const [start, setStart] = useState(() => {
     return new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   });
@@ -61,14 +36,24 @@ export default function LocationForm({ onSubmit, isLoading }) {
     return new Date().toISOString().split('T')[0];
   });
 
-  // Geolocation banner and feedback state
-  const [geoDismissed, setGeoDismissed] = useState(getSessionDismissed);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoFeedback, setGeoFeedback] = useState(null);
-
   const searchContainerRef = useRef(null);
   const debounceTimerRef = useRef(null);
-  const feedbackTimerRef = useRef(null);
+  const toastTimerRef = useRef(null);
+
+  const prevLocationRef = useRef(currentLocationName);
+
+  // Sync search input whenever active location changes from external action (e.g. initial auto-geo or preset)
+  useEffect(() => {
+    if (prevLocationRef.current !== currentLocationName) {
+      prevLocationRef.current = currentLocationName;
+      setSearchQuery(currentLocationName);
+      setSelectedLocation((prev) => ({
+        ...prev,
+        fullName: currentLocationName,
+        name: currentLocationName.split(',')[0],
+      }));
+    }
+  }, [currentLocationName]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -83,6 +68,98 @@ export default function LocationForm({ onSubmit, isLoading }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const showToast = (message, duration = 5000) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, duration);
+  };
+
+  // Crosshair button click handler (Recovery path)
+  const handleLocateMe = () => {
+    if (!navigator.geolocation) {
+      showToast(
+        "Location is blocked. Allow it from the lock icon in your browser's address bar, or search for a city."
+      );
+      return;
+    }
+
+    setIsLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        setIsLocating(false);
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        try {
+          const placeName = await reverseGeocode(lat, lon);
+          setSelectedLocation({
+            name: placeName.split(',')[0] || placeName,
+            fullName: placeName,
+            lat,
+            lon,
+          });
+          setSearchQuery(placeName);
+          setIsDropdownOpen(false);
+          setSuggestions([]);
+
+          onSubmit({
+            lat,
+            lon,
+            start,
+            end,
+            locationName: placeName,
+          });
+        } catch (err) {
+          console.warn('LocateMe reverse geocoding error:', err);
+          const fallbackName = `Your location (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`;
+          setSelectedLocation({
+            name: 'Your location',
+            fullName: fallbackName,
+            lat,
+            lon,
+          });
+          setSearchQuery(fallbackName);
+          onSubmit({
+            lat,
+            lon,
+            start,
+            end,
+            locationName: fallbackName,
+          });
+        }
+      },
+      (error) => {
+        setIsLocating(false);
+        // Show auto-dismissing toast only when user clicks this button
+        if (error.code === 1 || error.code === error.PERMISSION_DENIED) {
+          showToast(
+            "Location is blocked. Allow it from the lock icon in your browser's address bar, or search for a city."
+          );
+        } else {
+          showToast(
+            "Location is unavailable. Please check your browser settings or search for a city."
+          );
+        }
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 600000,
+      }
+    );
+  };
 
   // Handle debounced geocoding search
   const handleSearchChange = (e) => {
@@ -118,112 +195,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
     }, 300);
   };
 
-  // Clean up feedback timer on unmount
-  useEffect(() => {
-    return () => {
-      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-    };
-  }, []);
-
-  const showFeedbackMessage = (msg, duration = 4000) => {
-    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-    setGeoFeedback(msg);
-    feedbackTimerRef.current = setTimeout(() => {
-      setGeoFeedback(null);
-    }, duration);
-  };
-
-  const handleDismissPrompt = () => {
-    setSessionDismissed();
-    setGeoDismissed(true);
-  };
-
-  const handleAllowLocation = () => {
-    if (!navigator.geolocation) {
-      console.warn('Geolocation is not supported by this browser.');
-      handleDismissPrompt();
-      return;
-    }
-
-    setGeoLoading(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-
-        try {
-          const res = await axios.get('https://api.bigdatacloud.net/data/reverse-geocode-client', {
-            params: {
-              latitude: lat,
-              longitude: lon,
-              localityLanguage: 'en',
-            },
-            timeout: 8000,
-          });
-
-          const placeName = formatBigDataCloudLocation(res.data, lat, lon);
-          const shortName =
-            res.data?.city || res.data?.locality || res.data?.principalSubdivision || placeName;
-
-          setSelectedLocation({
-            name: shortName,
-            fullName: placeName,
-            lat,
-            lon,
-          });
-          setSearchQuery(placeName);
-
-          onSubmit({
-            lat,
-            lon,
-            start,
-            end,
-            locationName: placeName,
-          });
-        } catch (err) {
-          console.warn('Reverse geocode failed, falling back to coordinates:', err);
-          const fallbackName = `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
-          setSelectedLocation({
-            name: fallbackName,
-            fullName: fallbackName,
-            lat,
-            lon,
-          });
-          setSearchQuery(fallbackName);
-          onSubmit({
-            lat,
-            lon,
-            start,
-            end,
-            locationName: fallbackName,
-          });
-        } finally {
-          setGeoLoading(false);
-          handleDismissPrompt();
-        }
-      },
-      (error) => {
-        setGeoLoading(false);
-        handleDismissPrompt();
-
-        if (error.code === 1) {
-          // PERMISSION_DENIED
-          showFeedbackMessage('No problem, search for a location instead');
-        } else {
-          console.warn('Geolocation error:', error.message || error);
-        }
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 10000,
-        maximumAge: 300000,
-      }
-    );
-  };
-
   const selectPlace = (place) => {
-    handleDismissPrompt();
     setSelectedLocation({
       name: place.name,
       fullName: place.display_name,
@@ -236,7 +208,6 @@ export default function LocationForm({ onSubmit, isLoading }) {
   };
 
   const applyPreset = (preset) => {
-    handleDismissPrompt();
     setSelectedLocation({
       name: preset.name,
       fullName: preset.fullName,
@@ -250,7 +221,6 @@ export default function LocationForm({ onSubmit, isLoading }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    handleDismissPrompt();
     if (!start || !end) return;
 
     if (selectedLocation) {
@@ -276,60 +246,27 @@ export default function LocationForm({ onSubmit, isLoading }) {
 
   return (
     <div className="search-control-wrapper">
+      {/* Auto-dismissing Location Blocked Toast */}
+      {toastMessage && (
+        <div className="location-toast" role="alert" aria-live="polite">
+          <span className="toast-icon" aria-hidden="true">🔒</span>
+          <span className="toast-text">{toastMessage}</span>
+          <button
+            type="button"
+            className="toast-close-btn"
+            onClick={() => setToastMessage(null)}
+            aria-label="Dismiss toast"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="search-form-layout">
-        {/* Geolocation Permission Banner */}
-        {!geoDismissed && (
-          <div className="geo-prompt-banner" role="region" aria-label="Location permission prompt">
-            <div className="geo-banner-content">
-              <span className="geo-banner-icon" aria-hidden="true">📍</span>
-              <span className="geo-banner-text">Use my current location for local weather?</span>
-            </div>
-            <div className="geo-banner-actions">
-              <button
-                type="button"
-                className="geo-btn-allow"
-                onClick={handleAllowLocation}
-                disabled={geoLoading || isLoading}
-              >
-                {geoLoading ? (
-                  <span className="geo-loading-flex">
-                    <span className="pill-spinner-btn" /> Locating...
-                  </span>
-                ) : (
-                  'Allow'
-                )}
-              </button>
-              <button
-                type="button"
-                className="geo-btn-dismiss"
-                onClick={handleDismissPrompt}
-                disabled={geoLoading || isLoading}
-              >
-                Not now
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Geolocation Feedback Message (e.g. permission denied) */}
-        {geoFeedback && (
-          <div className="geo-banner-feedback" role="status">
-            <span className="geo-feedback-text">{geoFeedback}</span>
-            <button
-              type="button"
-              className="geo-feedback-close"
-              onClick={() => setGeoFeedback(null)}
-              aria-label="Dismiss message"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
         {/* Pill-shaped search bar */}
         <div className="pill-search-container" ref={searchContainerRef}>
           <div className="pill-search-bar">
-            <span className="pill-search-icon">🔍</span>
+            <span className="pill-search-icon" aria-hidden="true">🔍</span>
             <input
               type="text"
               className="pill-search-input"
@@ -340,7 +277,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
               onFocus={() => {
                 if (suggestions.length > 0) setIsDropdownOpen(true);
               }}
-              disabled={isLoading}
+              disabled={isLoading || isLocating}
             />
 
             {isSearching && <span className="pill-spinner" />}
@@ -359,6 +296,40 @@ export default function LocationForm({ onSubmit, isLoading }) {
                 ✕
               </button>
             )}
+
+            {/* Crosshair "Use my location" button inside the right end of the search bar */}
+            <button
+              type="button"
+              className={`pill-location-btn ${isLocating ? 'locating' : ''}`}
+              title="Use my location"
+              aria-label="Use my location"
+              onClick={handleLocateMe}
+              disabled={isLoading || isLocating}
+            >
+              {isLocating ? (
+                <span className="pill-spinner-location" />
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="crosshair-icon"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="7" />
+                  <line x1="12" y1="2" x2="12" y2="5" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                  <line x1="2" y1="12" x2="5" y2="12" />
+                  <line x1="19" y1="12" x2="22" y2="12" />
+                  <circle cx="12" cy="12" r="2" fill="currentColor" />
+                </svg>
+              )}
+            </button>
           </div>
 
           {/* Autocomplete Dropdown */}
@@ -370,7 +341,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
                   className="pill-dropdown-item"
                   onClick={() => selectPlace(item)}
                 >
-                  <span className="item-icon">📍</span>
+                  <span className="item-icon" aria-hidden="true">📍</span>
                   <div className="item-details">
                     <strong className="item-name">{item.name}</strong>
                     <span className="item-sub">
@@ -404,7 +375,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
                 required
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
-                disabled={isLoading}
+                disabled={isLoading || isLocating}
               />
             </div>
 
@@ -417,7 +388,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
                 required
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
-                disabled={isLoading}
+                disabled={isLoading || isLocating}
               />
             </div>
           </div>
@@ -425,7 +396,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
           <button
             type="submit"
             className="clean-submit-btn"
-            disabled={isLoading}
+            disabled={isLoading || isLocating}
           >
             {isLoading ? (
               <span className="btn-loading-flex">
@@ -446,7 +417,7 @@ export default function LocationForm({ onSubmit, isLoading }) {
               type="button"
               className={`preset-pill ${selectedLocation?.name === p.name ? 'active' : ''}`}
               onClick={() => applyPreset(p)}
-              disabled={isLoading}
+              disabled={isLoading || isLocating}
             >
               {p.name}
             </button>

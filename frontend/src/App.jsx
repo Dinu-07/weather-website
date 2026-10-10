@@ -19,6 +19,9 @@ import ForecastChart from './components/ForecastChart';
 import FullPageAmbientBackground from './components/FullPageAmbientBackground';
 import WaterDroplets from './components/WaterDroplets';
 import CurrentConditionsPanel from './components/CurrentConditionsPanel';
+import WeatherPulseLogo from './components/WeatherPulseLogo';
+import SplashScreen from './components/SplashScreen';
+import { reverseGeocode } from './utils/reverseGeocode';
 
 import sunnyAnim from './assets/lottie/sunny.json';
 import cloudyAnim from './assets/lottie/cloudy.json';
@@ -82,10 +85,16 @@ export default function App() {
   const [daily, setDaily] = useState([]);
   const [stats, setStats] = useState(null);
   const [forecast, setForecast] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastQuery, setLastQuery] = useState(null);
   const [currentLocationName, setCurrentLocationName] = useState('Peddapuram, Andhra Pradesh, India');
+
+  // Guard refs for single-invocation page load geolocation
+  const userSelectedRef = useRef(false);
+  const geoRequestedRef = useRef(false);
+  const defaultLoadedRef = useRef(false);
+  const fallbackTimerRef = useRef(null);
 
   // Live "Right Now" current conditions state
   const [currentWeather, setCurrentWeather] = useState(null);
@@ -97,10 +106,18 @@ export default function App() {
   const [isAnimationPlaying, setIsAnimationPlaying] = useState(true);
   const lottieRef = useRef(null);
 
-  // Sync theme to document root
+  // Splash screen completion state (fires onFinish callback)
+  const [splashDone, setSplashDone] = useState(false);
+
+  // Sync theme to document root and meta theme-color
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
+    const bg = theme === 'dark' ? '#232C4D' : '#DDEBFA';
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', bg);
+    }
   }, [theme]);
 
   const toggleTheme = () => {
@@ -187,8 +204,10 @@ export default function App() {
     }
   };
 
-  // Initial load on mount (Peddapuram default)
-  useEffect(() => {
+  // Default location loader (Peddapuram fallback)
+  const loadDefaultLocation = () => {
+    if (defaultLoadedRef.current || userSelectedRef.current) return;
+    defaultLoadedRef.current = true;
     const today = new Date().toISOString().split('T')[0];
     const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
       .toISOString()
@@ -202,7 +221,106 @@ export default function App() {
       locationName: 'Peddapuram, Andhra Pradesh, India',
     });
     fetchCurrentConditions(17.08, 82.13);
-  }, []);
+  };
+
+  // Flow on page load: wait for splashDone
+  useEffect(() => {
+    if (!splashDone) return;
+    if (geoRequestedRef.current) return;
+    geoRequestedRef.current = true;
+
+    // Skip entirely if a location is already selected by user
+    if (userSelectedRef.current) return;
+
+    const GEO_OPTIONS = {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 600000,
+    };
+
+    const requestPosition = () => {
+      // While native popup is waiting for an answer, keep interface in loading/scanning state
+      setLoading(true);
+
+      // Fallback timer: if no response after about 8 seconds, load default location
+      fallbackTimerRef.current = setTimeout(() => {
+        loadDefaultLocation();
+      }, 8000);
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+          if (userSelectedRef.current) return;
+
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          try {
+            const placeName = await reverseGeocode(lat, lon);
+            if (userSelectedRef.current) return;
+
+            setCurrentLocationName(placeName);
+            setCurrentCoords({ lat, lon });
+
+            const today = new Date().toISOString().split('T')[0];
+            const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split('T')[0];
+
+            fetchWeatherData({
+              lat,
+              lon,
+              start: sixMonthsAgo,
+              end: today,
+              locationName: placeName,
+            });
+            fetchCurrentConditions(lat, lon);
+          } catch (err) {
+            console.warn('Geolocation reverse geocoding failed:', err);
+            loadDefaultLocation();
+          }
+        },
+        (error) => {
+          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+          console.log('Geolocation dismissed or unavailable, continuing with default location:', error?.message);
+          loadDefaultLocation();
+        },
+        GEO_OPTIONS
+      );
+    };
+
+    if (!navigator.geolocation) {
+      loadDefaultLocation();
+      return;
+    }
+
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((permissionStatus) => {
+          if (userSelectedRef.current) return;
+
+          if (permissionStatus.state === 'denied') {
+            // Silently continue with default location
+            loadDefaultLocation();
+          } else {
+            // "granted" or "prompt" -> call getCurrentPosition
+            requestPosition();
+          }
+        })
+        .catch((err) => {
+          console.warn('Permissions query check failed, calling getCurrentPosition:', err);
+          requestPosition();
+        });
+    } else {
+      // Permissions API unavailable -> call getCurrentPosition directly
+      requestPosition();
+    }
+
+    return () => {
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    };
+  }, [splashDone]);
 
   const weatherDetails = getWeatherDetails(stats?.dominant_weathercode);
   const isRainyPeriod = Boolean(
@@ -250,7 +368,15 @@ export default function App() {
 
   return (
     <div className="google-weather-app" data-theme={theme}>
-      {/* Fixed Full-Viewport Ambient Weather Background Layer (driven primarily by live Right Now conditions) */}
+      {/* Branded Splash Screen on initial page load */}
+      {!splashDone && (
+        <SplashScreen
+          theme={theme}
+          onFinish={() => setSplashDone(true)}
+        />
+      )}
+
+      {/* Fixed Full-Viewport Ambient Weather Background Layer (particles paused until splash finishes) */}
       <FullPageAmbientBackground
         theme={theme}
         weathercode={ambientWeathercode}
@@ -258,18 +384,16 @@ export default function App() {
         totalWetDays={ambientTotalWetDays}
         totalDays={ambientTotalDays}
         windSpeed={ambientWindSpeed}
-        isPlaying={isAnimationPlaying}
+        isPlaying={isAnimationPlaying && splashDone}
       />
 
       <div className="feed-container">
         {/* Top App Bar */}
         <header className="app-top-bar">
           <div className="brand-lockup">
-            <span className="brand-weather-icon">⛅</span>
-            <div className="brand-text">
-              <h1 className="brand-title">Weather</h1>
-              <span className="brand-badge">Historical & Forecast</span>
-            </div>
+            <WeatherPulseLogo theme={theme} height={50} />
+            <h1 className="sr-only">WeatherPulse</h1>
+            <span className="brand-badge">Historical & Forecast</span>
           </div>
 
           <button
@@ -288,7 +412,14 @@ export default function App() {
 
         {/* Pill-shaped Location Search Bar */}
         <section className="search-section">
-          <LocationForm onSubmit={fetchWeatherData} isLoading={loading} />
+          <LocationForm
+            onSubmit={(params) => {
+              userSelectedRef.current = true;
+              fetchWeatherData(params);
+            }}
+            isLoading={loading}
+            currentLocationName={currentLocationName}
+          />
         </section>
 
         {/* Live "Right Now" Current Conditions Panel */}
