@@ -23,7 +23,6 @@ import WeatherPulseLogo from './components/WeatherPulseLogo';
 import SplashScreen from './components/SplashScreen';
 import Hero, { CONDITION_METADATA } from './components/Hero';
 import { reverseGeocode } from './utils/reverseGeocode';
-import { getHighAccuracyPosition } from './utils/useHighAccuracyGeo';
 
 import sunnyAnim from './assets/lottie/sunny.json';
 import cloudyAnim from './assets/lottie/cloudy.json';
@@ -33,69 +32,41 @@ import stormyAnim from './assets/lottie/stormy.json';
 
 import './App.css';
 
-// ---------- localStorage helpers (all wrapped in try/catch) ----------
-const LS_KEY = 'wp:location';
-function loadSavedLocation() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed.name === 'string' &&
-      typeof parsed.lat === 'number' &&
-      typeof parsed.lon === 'number'
-    ) {
-      return parsed; // { name, lat, lon }
-    }
-    return null;
-  } catch { return null; }
-}
-function saveLocation(name, lat, lon) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ name, lat, lon })); } catch { /* ignore */ }
-}
-
-// Accuracy gate: reject anything coarser than 5 km (likely IP-based estimate)
-const MAX_ACCEPTED_ACCURACY_M = 5000;
+// Clear any legacy saved location from previous builds — one-time on module load.
+try { localStorage.removeItem('wp:location'); } catch { /* ignore */ }
 
 // Map WMO dominant weathercode to readable condition and Lottie animation
 function getWeatherDetails(code) {
   if (code === null || code === undefined) {
     return { condition: 'Clear Conditions', animation: sunnyAnim };
   }
-
-  if (code === 0) {
-    return { condition: 'Clear Sky', animation: sunnyAnim };
-  }
-  if (code === 1) {
-    return { condition: 'Mainly Clear', animation: cloudyAnim };
-  }
-  if (code === 2) {
-    return { condition: 'Partly Cloudy', animation: cloudyAnim };
-  }
-  if (code === 3) {
-    return { condition: 'Overcast', animation: cloudyAnim };
-  }
-  if (code === 45 || code === 48) {
-    return { condition: 'Foggy / Hazy', animation: cloudyAnim };
-  }
-  if ([51, 53, 55, 56, 57].includes(code)) {
-    return { condition: 'Drizzle', animation: rainyAnim };
-  }
-  if ([61, 63, 65, 66, 67].includes(code)) {
-    return { condition: 'Rain', animation: rainyAnim };
-  }
-  if ([80, 81, 82].includes(code)) {
-    return { condition: 'Rain Showers', animation: rainyAnim };
-  }
-  if ([71, 73, 75, 77, 85, 86].includes(code)) {
-    return { condition: 'Snow', animation: snowyAnim };
-  }
-  if ([95, 96, 99].includes(code)) {
-    return { condition: 'Thunderstorm', animation: stormyAnim };
-  }
-
+  if (code === 0) return { condition: 'Clear Sky', animation: sunnyAnim };
+  if (code === 1) return { condition: 'Mainly Clear', animation: cloudyAnim };
+  if (code === 2) return { condition: 'Partly Cloudy', animation: cloudyAnim };
+  if (code === 3) return { condition: 'Overcast', animation: cloudyAnim };
+  if (code === 45 || code === 48) return { condition: 'Foggy / Hazy', animation: cloudyAnim };
+  if ([51, 53, 55, 56, 57].includes(code)) return { condition: 'Drizzle', animation: rainyAnim };
+  if ([61, 63, 65, 66, 67].includes(code)) return { condition: 'Rain', animation: rainyAnim };
+  if ([80, 81, 82].includes(code)) return { condition: 'Rain Showers', animation: rainyAnim };
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return { condition: 'Snow', animation: snowyAnim };
+  if ([95, 96, 99].includes(code)) return { condition: 'Thunderstorm', animation: stormyAnim };
   return { condition: 'Fair Weather', animation: sunnyAnim };
+}
+
+// Shared geolocation helper used by both page-load flow and the crosshair button.
+// Calls getCurrentPosition once (no watchPosition). Resolves with { lat, lon } or rejects.
+function detectMyLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator?.geolocation) {
+      reject(new Error('Geolocation not supported'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  });
 }
 
 export default function App() {
@@ -117,13 +88,11 @@ export default function App() {
   const [lastQuery, setLastQuery] = useState(null);
   const [currentLocationName, setCurrentLocationName] = useState('Peddapuram, Andhra Pradesh, India');
 
-  // Guard refs for single-invocation page load geolocation
-  const userSelectedRef  = useRef(false); // true once user manually picks a place
+  // Guard against React StrictMode double-invocation on page load
   const geoRequestedRef  = useRef(false);
   const defaultLoadedRef = useRef(false);
   const fallbackTimerRef = useRef(null);
-  const geoAbortRef      = useRef(null);  // AbortController for the watch
-  const searchInputRef   = useRef(null);  // forwarded to LocationForm
+  const searchInputRef   = useRef(null); // forwarded to LocationForm
 
   // Live "Right Now" current conditions state
   const [currentWeather, setCurrentWeather] = useState(null);
@@ -150,14 +119,10 @@ export default function App() {
     localStorage.setItem('theme', theme);
     const bg = theme === 'dark' ? '#232C4D' : '#DDEBFA';
     const metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) {
-      metaTheme.setAttribute('content', bg);
-    }
+    if (metaTheme) metaTheme.setAttribute('content', bg);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
+  const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
 
   const toggleAnimationPlay = () => {
     if (isAnimationPlaying) {
@@ -173,9 +138,7 @@ export default function App() {
     setCurrentError(null);
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
-      const res = await axios.get(`${baseUrl}/api/current`, {
-        params: { lat, lon },
-      });
+      const res = await axios.get(`${baseUrl}/api/current`, { params: { lat, lon } });
       setCurrentWeather(res.data);
     } catch (err) {
       console.error('Current Weather Error:', err);
@@ -191,49 +154,33 @@ export default function App() {
     setLoading(true);
     setError(null);
     setLastQuery(params);
-    if (params.locationName) {
-      setCurrentLocationName(params.locationName);
-    }
+    if (params.locationName) setCurrentLocationName(params.locationName);
 
-    // Always fetch live current conditions whenever location is selected
     if (params.lat !== undefined && params.lon !== undefined) {
       setCurrentCoords({ lat: params.lat, lon: params.lon });
       fetchCurrentConditions(params.lat, params.lon);
     }
 
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
     try {
       const [weatherRes, forecastRes] = await Promise.all([
         axios.get(`${baseUrl}/api/weather`, {
-          params: {
-            lat: params.lat,
-            lon: params.lon,
-            start: params.start,
-            end: params.end,
-          },
+          params: { lat: params.lat, lon: params.lon, start: params.start, end: params.end },
         }),
         axios.get(`${baseUrl}/api/forecast`, {
-          params: {
-            lat: params.lat,
-            lon: params.lon,
-            start: params.start,
-            end: params.end,
-            days: 7,
-          },
+          params: { lat: params.lat, lon: params.lon, start: params.start, end: params.end, days: 7 },
         }),
       ]);
-
       setDaily(weatherRes.data.daily || []);
       setStats(weatherRes.data.stats || null);
       setForecast(forecastRes.data.forecast || []);
     } catch (err) {
       console.error('API Error:', err);
-      const detail =
+      setError(
         err.response?.data?.detail ||
         err.message ||
-        'Failed to fetch weather data. Open-Meteo may have no records for this coordinate or date range.';
-      setError(detail);
+        'Failed to fetch weather data. Open-Meteo may have no records for this coordinate or date range.'
+      );
     } finally {
       setLoading(false);
     }
@@ -241,13 +188,10 @@ export default function App() {
 
   // Default location loader (Peddapuram fallback)
   const loadDefaultLocation = () => {
-    if (defaultLoadedRef.current || userSelectedRef.current) return;
+    if (defaultLoadedRef.current) return;
     defaultLoadedRef.current = true;
     const today = new Date().toISOString().split('T')[0];
-    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
-
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     fetchWeatherData({
       lat: 17.08,
       lon: 82.13,
@@ -258,105 +202,73 @@ export default function App() {
     fetchCurrentConditions(17.08, 82.13);
   };
 
-  // Helper: run weather analysis for given coords + name
+  // Run full weather analysis for a detected position
   const applyDetectedLocation = (lat, lon, name) => {
     setCurrentLocationName(name);
     setCurrentCoords({ lat, lon });
     const today = new Date().toISOString().split('T')[0];
-    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     fetchWeatherData({ lat, lon, start: sixMonthsAgo, end: today, locationName: name });
     fetchCurrentConditions(lat, lon);
   };
 
-  // Flow on page load: wait for splashDone AND heroEntranceDone
+  // Page-load: after splash and hero entrance, call detectMyLocation() once
   useEffect(() => {
     if (!splashDone || !heroEntranceDone) return;
     if (geoRequestedRef.current) return;
     geoRequestedRef.current = true;
 
-    // Priority 2a: use saved location from last session — skip geolocation entirely
-    const saved = loadSavedLocation();
-    if (saved) {
-      userSelectedRef.current = true;
-      applyDetectedLocation(saved.lat, saved.lon, saved.name);
-      return;
-    }
-
-    // Priority 2b: no saved location — request browser position
     if (!navigator.geolocation) {
       loadDefaultLocation();
       return;
     }
 
-    const requestPosition = () => {
-      setLoading(true);
+    // Fallback timer: load default if nothing resolves in 13 s
+    fallbackTimerRef.current = setTimeout(() => {
+      loadDefaultLocation();
+    }, 13000);
 
-      if (geoAbortRef.current) geoAbortRef.current.abort();
-      const controller = new AbortController();
-      geoAbortRef.current = controller;
+    const tryDetect = async () => {
+      try {
+        const { lat, lon } = await detectMyLocation();
+        if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+        if (defaultLoadedRef.current) return; // fallback already fired
 
-      // Fallback timer: if nothing resolves after 15.5 s, load default
-      fallbackTimerRef.current = setTimeout(() => {
-        if (!userSelectedRef.current) loadDefaultLocation();
-      }, 15500);
-
-      getHighAccuracyPosition(controller.signal)
-        .then(async ({ lat, lon, accuracy }) => {
-          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-          if (userSelectedRef.current) return;
-
-          // 2c: reject coarse / IP-based fixes silently
-          if (accuracy > MAX_ACCEPTED_ACCURACY_M) {
-            loadDefaultLocation();
-            return;
-          }
-
-          // 2d: accepted — reverse geocode, save, and run analysis
-          const name = await reverseGeocode(lat, lon);
-          if (userSelectedRef.current) return;
-
-          saveLocation(name, lat, lon);
-          applyDetectedLocation(lat, lon, name);
-        })
-        .catch((err) => {
-          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-          if (err?.message === 'Aborted') return;
-          if (!userSelectedRef.current) loadDefaultLocation();
-        });
+        const name = await reverseGeocode(lat, lon);
+        applyDetectedLocation(lat, lon, name);
+      } catch {
+        // denied, timeout, or any other error — silently use default
+        if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+        loadDefaultLocation();
+      }
     };
 
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions
         .query({ name: 'geolocation' })
-        .then((permissionStatus) => {
-          if (userSelectedRef.current) return;
-          if (permissionStatus.state === 'denied') {
+        .then((status) => {
+          if (status.state === 'denied') {
+            clearTimeout(fallbackTimerRef.current);
             loadDefaultLocation();
           } else {
-            requestPosition();
+            tryDetect();
           }
         })
-        .catch(() => requestPosition());
+        .catch(() => tryDetect());
     } else {
-      requestPosition();
+      tryDetect();
     }
 
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-      if (geoAbortRef.current) geoAbortRef.current.abort();
     };
   }, [splashDone, heroEntranceDone]);
 
   const weatherDetails = getWeatherDetails(stats?.dominant_weathercode);
   const isRainyPeriod = Boolean(
-    stats &&
-    stats.num_days > 0 &&
-    (stats.total_wet_days || 0) / stats.num_days >= 0.35
+    stats && stats.num_days > 0 && (stats.total_wet_days || 0) / stats.num_days >= 0.35
   );
 
-  // Live "Right Now" conditions take primary priority for the full-page ambient background.
   const ambientWeathercode =
     currentWeather?.weathercode !== undefined && currentWeather?.weathercode !== null
       ? currentWeather.weathercode
@@ -393,11 +305,9 @@ export default function App() {
 
   const previewDetails = previewCondition ? CONDITION_METADATA[previewCondition] : null;
   const activeAmbientWeathercode = previewDetails ? previewDetails.weathercode : ambientWeathercode;
-
   const activeCloudCover = previewDetails
     ? (previewDetails.key === 'clear' ? 10 : previewDetails.key === 'cloudy' ? 85 : previewDetails.key === 'fog' ? 80 : 90)
     : ambientCloudCover;
-
   const activeTotalWetDays = previewDetails
     ? (['rain', 'storm'].includes(previewDetails.key) ? 1 : 0)
     : ambientTotalWetDays;
@@ -406,10 +316,7 @@ export default function App() {
     <div className="google-weather-app" data-theme={theme}>
       {/* Branded Splash Screen on initial page load */}
       {!splashDone && (
-        <SplashScreen
-          theme={theme}
-          onFinish={() => setSplashDone(true)}
-        />
+        <SplashScreen theme={theme} onFinish={() => setSplashDone(true)} />
       )}
 
       {/* Fixed Full-Viewport Ambient Weather Background Layer */}
@@ -463,19 +370,13 @@ export default function App() {
         {/* Pill-shaped Location Search Bar */}
         <section className="search-section" id="search-section">
           <LocationForm
-            onSubmit={(params) => {
-              userSelectedRef.current = true;
-              // Save manual pick to localStorage for next session
-              saveLocation(
-                params.locationName || params.name || '',
-                params.lat,
-                params.lon
-              );
-              fetchWeatherData(params);
-            }}
+            onSubmit={(params) => fetchWeatherData(params)}
             isLoading={loading}
             currentLocationName={currentLocationName}
             searchInputRef={searchInputRef}
+            detectMyLocation={detectMyLocation}
+            reverseGeocode={reverseGeocode}
+            onDetected={applyDetectedLocation}
           />
         </section>
 
@@ -523,10 +424,8 @@ export default function App() {
           <main className="weather-main-feed">
             {/* Hero Section with Soft Condition Lottie Background */}
             <section className="weather-hero-card stagger-card stagger-delay-1">
-              {/* Surface Condensation Water Droplets if rainy period (wet days >= 35%) */}
               {isRainyPeriod && <WaterDroplets isPlaying={isAnimationPlaying} />}
 
-              {/* Weather Art Lottie Backdrop */}
               <div className="hero-lottie-backdrop">
                 <Lottie
                   lottieRef={lottieRef}
@@ -546,7 +445,6 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Master Play/Pause Animation Toggle */}
                   <button
                     type="button"
                     className="animation-toggle-btn"
@@ -574,13 +472,10 @@ export default function App() {
                   </div>
 
                   <div className="hero-condition-badge">
-                    <span className="hero-condition-text">
-                      {weatherDetails.condition}
-                    </span>
+                    <span className="hero-condition-text">{weatherDetails.condition}</span>
                   </div>
                 </div>
 
-                {/* Explanatory note clarifying historical mean vs live right now */}
                 <div className="hero-mean-explanation-pill">
                   <span className="explanation-icon">ℹ️</span>
                   <span>Showing daily mean across selected dates. See <strong>Right Now</strong> above for current live conditions.</span>
