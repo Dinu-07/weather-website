@@ -136,7 +136,7 @@ export default function App() {
   const fetchCurrentConditions = async (lat, lon) => {
     setCurrentLoading(true);
     setCurrentError(null);
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const baseUrl = import.meta.env.VITE_API_URL;
     try {
       const res = await axios.get(`${baseUrl}/api/current`, { params: { lat, lon } });
       setCurrentWeather(res.data);
@@ -161,7 +161,7 @@ export default function App() {
       fetchCurrentConditions(params.lat, params.lon);
     }
 
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const baseUrl = import.meta.env.VITE_API_URL;
     try {
       const [weatherRes, forecastRes] = await Promise.all([
         axios.get(`${baseUrl}/api/weather`, {

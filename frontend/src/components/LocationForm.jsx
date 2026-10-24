@@ -131,7 +131,7 @@ export default function LocationForm({
     setIsSearching(true);
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const baseUrl = import.meta.env.VITE_API_URL;
         const res = await axios.get(`${baseUrl}/api/geocode`, {
           params: { query: query.trim() },
         });
