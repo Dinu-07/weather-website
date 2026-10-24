@@ -11,6 +11,13 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import requests
+from resilience import (
+    UpstreamError,
+    UpstreamRateLimitError,
+    UpstreamServiceError,
+    open_meteo_request,
+    cached_open_meteo_call,
+)
 
 try:
     from sklearn.linear_model import LinearRegression
@@ -82,7 +89,7 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
         "timezone": "auto",
     }
 
-    response = requests.get(url, params=params, timeout=30)
+    response = open_meteo_request(url, params=params, timeout=10)
     response.raise_for_status()
     payload = response.json()
 
@@ -151,7 +158,7 @@ def fetch_weather_data(latitude: float, longitude: float, start_date: str, end_d
                 "daily": "uv_index_max,precipitation_probability_mean",
                 "timezone": "auto",
             }
-            fore_res = requests.get(fore_url, params=fore_params, timeout=10)
+            fore_res = open_meteo_request(fore_url, params=fore_params, timeout=10)
             if fore_res.status_code == 200:
                 fore_daily = fore_res.json().get("daily", {})
                 date_strs = df["date"].dt.strftime("%Y-%m-%d")
@@ -190,7 +197,7 @@ def fetch_air_quality(latitude: float, longitude: float, start_date: str, end_da
     }
     cols = ["date", "european_aqi", "us_aqi", "pm2_5", "pm10"]
     try:
-        response = requests.get(url, params=params, timeout=30)
+        response = open_meteo_request(url, params=params, timeout=10)
         if response.status_code != 200:
             return pd.DataFrame(columns=cols)
 
@@ -447,117 +454,107 @@ def get_current_weather(latitude: float, longitude: float) -> dict:
     """
     Fetch real-time live current weather conditions and atmospheric telemetry
     from Open-Meteo Forecast & Air Quality APIs.
-
-    Parameters
-    ----------
-    latitude, longitude : float
-        Coordinates of the location.
-
-    Returns
-    -------
-    dict
-        Current atmospheric telemetry (temperature, feels-like, dewpoint, humidity,
-        precipitation, weathercode, wind speed, gusts, direction, cloud cover,
-        today's UV index & sun times, and live air quality metrics).
+    Cached for 10 minutes per rounded (lat, lon, 2 decimals) with stale fallback.
     """
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "current": ",".join([
-            "temperature_2m",
-            "relative_humidity_2m",
-            "apparent_temperature",
-            "dew_point_2m",
-            "precipitation",
-            "weather_code",
-            "wind_speed_10m",
-            "wind_direction_10m",
-            "cloud_cover",
-            "wind_gusts_10m",
-            "uv_index",
-        ]),
-        "daily": "uv_index_max,sunrise,sunset",
-        "forecast_days": 1,
-        "timezone": "auto",
-    }
+    cache_key = ("live_current", round(float(latitude), 2), round(float(longitude), 2))
 
-    aq_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
-    aq_params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "current": "european_aqi,us_aqi,pm2_5,pm10",
-        "timezone": "auto",
-    }
+    def _fetch_live():
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "current": ",".join([
+                "temperature_2m",
+                "relative_humidity_2m",
+                "apparent_temperature",
+                "dew_point_2m",
+                "precipitation",
+                "weather_code",
+                "wind_speed_10m",
+                "wind_direction_10m",
+                "cloud_cover",
+                "wind_gusts_10m",
+                "uv_index",
+            ]),
+            "daily": "uv_index_max,sunrise,sunset",
+            "forecast_days": 1,
+            "timezone": "auto",
+        }
 
-    def _fetch_forecast():
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        return r.json()
+        aq_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+        aq_params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "current": "european_aqi,us_aqi,pm2_5,pm10",
+            "timezone": "auto",
+        }
 
-    def _fetch_aq():
-        try:
-            r = requests.get(aq_url, params=aq_params, timeout=10)
-            if r.status_code == 200:
-                aq_json = r.json()
-                aq_cur = aq_json.get("current", {})
-                return {
-                    "time": aq_cur.get("time"),
-                    "timezone": aq_json.get("timezone"),
-                    "timezone_abbreviation": aq_json.get("timezone_abbreviation"),
-                    "european_aqi": aq_cur.get("european_aqi"),
-                    "us_aqi": aq_cur.get("us_aqi"),
-                    "pm2_5": aq_cur.get("pm2_5"),
-                    "pm10": aq_cur.get("pm10"),
-                }
-        except Exception as e:
-            print(f"[LIVE AQ WARNING] Failed to fetch live air quality: {e}")
-        return {}
+        def _fetch_forecast():
+            r = open_meteo_request(url, params=params, timeout=10)
+            return r.json()
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        f_future = executor.submit(_fetch_forecast)
-        aq_future = executor.submit(_fetch_aq)
-        data = f_future.result()
-        aq_data = aq_future.result()
+        def _fetch_aq():
+            try:
+                r = open_meteo_request(aq_url, params=aq_params, timeout=10)
+                if r.status_code == 200:
+                    aq_json = r.json()
+                    aq_cur = aq_json.get("current", {})
+                    return {
+                        "time": aq_cur.get("time"),
+                        "timezone": aq_json.get("timezone"),
+                        "timezone_abbreviation": aq_json.get("timezone_abbreviation"),
+                        "european_aqi": aq_cur.get("european_aqi"),
+                        "us_aqi": aq_cur.get("us_aqi"),
+                        "pm2_5": aq_cur.get("pm2_5"),
+                        "pm10": aq_cur.get("pm10"),
+                    }
+            except Exception as e:
+                print(f"[LIVE AQ WARNING] Failed to fetch live air quality: {e}")
+            return {}
 
-    print(f"[LIVE FETCH {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Direct request to Open-Meteo for lat={latitude}, lon={longitude} (gen_time: {data.get('generationtime_ms', 0):.3f}ms)")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_future = executor.submit(_fetch_forecast)
+            aq_future = executor.submit(_fetch_aq)
+            data = f_future.result()
+            aq_data = aq_future.result()
 
-    cur = data.get("current", {})
-    daily = data.get("daily", {})
+        cur = data.get("current", {})
+        daily = data.get("daily", {})
 
-    temp_c = cur.get("temperature_2m")
-    temp_f = round((temp_c * 9 / 5 + 32), 1) if temp_c is not None else None
-    feels_c = cur.get("apparent_temperature")
-    feels_f = round((feels_c * 9 / 5 + 32), 1) if feels_c is not None else None
-    dew_c = cur.get("dew_point_2m")
-    dew_f = round((dew_c * 9 / 5 + 32), 1) if dew_c is not None else None
+        temp_c = cur.get("temperature_2m")
+        temp_f = round((temp_c * 9 / 5 + 32), 1) if temp_c is not None else None
+        feels_c = cur.get("apparent_temperature")
+        feels_f = round((feels_c * 9 / 5 + 32), 1) if feels_c is not None else None
+        dew_c = cur.get("dew_point_2m")
+        dew_f = round((dew_c * 9 / 5 + 32), 1) if dew_c is not None else None
 
-    uv_today = daily.get("uv_index_max", [None])[0] if daily.get("uv_index_max") else None
-    sunrise_today = daily.get("sunrise", [None])[0] if daily.get("sunrise") else None
-    sunset_today = daily.get("sunset", [None])[0] if daily.get("sunset") else None
+        uv_today = daily.get("uv_index_max", [None])[0] if daily.get("uv_index_max") else None
+        sunrise_today = daily.get("sunrise", [None])[0] if daily.get("sunrise") else None
+        sunset_today = daily.get("sunset", [None])[0] if daily.get("sunset") else None
 
-    return {
-        "time": cur.get("time"),
-        "timezone": data.get("timezone"),
-        "timezone_abbreviation": data.get("timezone_abbreviation"),
-        "temperature_c": temp_c,
-        "temperature_f": temp_f,
-        "feels_like_c": feels_c,
-        "feels_like_f": feels_f,
-        "dewpoint_c": dew_c,
-        "dewpoint_f": dew_f,
-        "humidity_pct": cur.get("relative_humidity_2m"),
-        "precipitation_mm": cur.get("precipitation"),
-        "weathercode": cur.get("weather_code"),
-        "wind_speed_kmh": cur.get("wind_speed_10m"),
-        "wind_gusts_kmh": cur.get("wind_gusts_10m"),
-        "wind_direction": cur.get("wind_direction_10m"),
-        "cloud_cover_pct": cur.get("cloud_cover"),
-        "uv_index": cur.get("uv_index"),
-        "uv_index_live": cur.get("uv_index"),
-        "uv_index_today": uv_today,
-        "sunrise_today": sunrise_today,
-        "sunset_today": sunset_today,
-        "air_quality": aq_data,
-    }
+        return {
+            "time": cur.get("time"),
+            "timezone": data.get("timezone"),
+            "timezone_abbreviation": data.get("timezone_abbreviation"),
+            "temperature_c": temp_c,
+            "temperature_f": temp_f,
+            "feels_like_c": feels_c,
+            "feels_like_f": feels_f,
+            "dewpoint_c": dew_c,
+            "dewpoint_f": dew_f,
+            "humidity_pct": cur.get("relative_humidity_2m"),
+            "precipitation_mm": cur.get("precipitation"),
+            "weathercode": cur.get("weather_code"),
+            "wind_speed_kmh": cur.get("wind_speed_10m"),
+            "wind_gusts_kmh": cur.get("wind_gusts_10m"),
+            "wind_direction": cur.get("wind_direction_10m"),
+            "cloud_cover_pct": cur.get("cloud_cover"),
+            "uv_index": cur.get("uv_index"),
+            "uv_index_live": cur.get("uv_index"),
+            "uv_index_today": uv_today,
+            "sunrise_today": sunrise_today,
+            "sunset_today": sunset_today,
+            "air_quality": aq_data,
+        }
 
+    return cached_open_meteo_call(cache_key, ttl_seconds=600, fetch_fn=_fetch_live, max_stale_age=3600)

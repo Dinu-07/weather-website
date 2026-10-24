@@ -186,17 +186,18 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
         grid: { color: 'rgba(148, 163, 184, 0.12)' },
         ticks: {
           color: '#94a3b8',
-          autoSkip: true,
+          autoSkip: isMobile ? true : undefined,
           maxTicksLimit: isMobile ? 5 : 12,
           minRotation: isMobile ? 0 : undefined,
           maxRotation: isMobile ? 0 : undefined,
           font: { family: "'Inter', sans-serif", size: 11 },
-          callback: isMobile
-            ? function (val, index) {
-                const label = this.getLabelForValue ? this.getLabelForValue(val) : (chartData?.labels?.[index] ?? val);
-                return formatShortDate(label);
-              }
-            : undefined,
+          callback: function (val, index) {
+            const label = this.getLabelForValue ? this.getLabelForValue(val) : (chartData?.labels?.[index] ?? val);
+            if (isMobile) {
+              return formatShortDate(label);
+            }
+            return label;
+          },
         },
       },
       y: {

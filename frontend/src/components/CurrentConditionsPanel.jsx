@@ -1,4 +1,5 @@
 import React from 'react';
+import ErrorState from './ErrorState';
 
 /**
  * WMO Weather Code Mapping to Condition Label & Icon
@@ -109,7 +110,12 @@ export default function CurrentConditionsPanel({
         {/* Error Notice */}
         {error && (
           <div className="current-error-state">
-            <span>⚠️ {error}</span>
+            <ErrorState
+              message={error}
+              onRetry={onRefresh}
+              compact={true}
+              autoRetry={true}
+            />
           </div>
         )}
 

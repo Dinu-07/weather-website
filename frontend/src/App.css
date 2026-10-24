@@ -1027,8 +1027,14 @@
 ---------------------------------------------------------------- */
 .telemetry-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
+}
+
+@media (max-width: 1024px) {
+  .telemetry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .telemetry-card {
@@ -1707,6 +1713,89 @@
 /* ----------------------------------------------------------------
    STATUS CARDS & FOOTER
 ---------------------------------------------------------------- */
+
+/* Ensure no text can run past cards */
+.weather-card,
+.current-conditions-card,
+.telemetry-card,
+.error-card,
+.error-state-box,
+.current-error-state {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.error-state-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.error-state-box.error-state-compact {
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 12px;
+}
+
+.error-state-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.error-state-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error-state-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.error-state-msg {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.error-state-auto-note {
+  font-size: 11px;
+  font-weight: 500;
+  color: #ef4444;
+  opacity: 0.85;
+}
+
+.error-retry-btn {
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.error-retry-btn:hover {
+  opacity: 0.9;
+}
+
+.error-retry-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .error-card {
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.25);
@@ -2653,5 +2742,17 @@
     padding: 8px;
     min-width: 36px;
     min-height: 36px;
+  }
+
+  /* Error state responsive layout on mobile */
+  .error-state-box {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .error-retry-btn {
+    width: 100%;
+    margin-top: 6px;
+    min-height: 40px;
   }
 }
