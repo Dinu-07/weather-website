@@ -1054,9 +1054,10 @@
 
 .card-top-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 6px 8px;
   min-height: 36px;
   margin-bottom: 10px;
   flex-shrink: 0;
@@ -1064,7 +1065,7 @@
 
 .card-icon-title {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 7px;
   flex: 1 1 auto;
   min-width: 0;
@@ -1084,6 +1085,11 @@
   color: var(--text-secondary);
   word-break: normal;
   overflow-wrap: break-word;
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .card-status-pill {
@@ -1092,10 +1098,12 @@
   line-height: 1.25;
   padding: 3px 8px;
   border-radius: 9999px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  align-self: flex-start;
+  align-self: center;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .telemetry-empty-notice {
@@ -1393,6 +1401,7 @@
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .daylight-pill {
@@ -1476,7 +1485,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 24px;
+  flex-wrap: wrap;
+  min-height: 24px;
+  height: auto;
+  gap: 4px;
 }
 
 .aqi-badge-label {
@@ -1607,7 +1619,8 @@
 
 .precip-stats-row {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   margin-top: 4px;
 }
 
@@ -1638,19 +1651,37 @@
 /* Feels-Like Comparison */
 .feels-like-comparison-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+
+.feels-metric-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.feels-metric-val {
+  display: flex;
   align-items: baseline;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.feels-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .actual-temp-comparison {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-}
-
-.actual-temp-label {
-  font-size: 11px;
-  color: var(--text-muted);
+  gap: 4px;
 }
 
 .actual-temp-val {
@@ -1658,6 +1689,14 @@
   font-weight: 600;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+
+.actual-temp-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .feels-like-note {
@@ -2060,8 +2099,8 @@
 /* Dark Mode Moon Glow for Clear Sky */
 .full-page-moon-glow {
   position: absolute;
-  top: -40px;
-  right: -30px;
+  top: 15px;
+  right: 35px;
   width: 440px;
   height: 440px;
   pointer-events: none;
@@ -2078,8 +2117,8 @@
 
 .moon-crescent-orb {
   position: absolute;
-  top: 90px;
-  right: 90px;
+  top: 110px;
+  right: 110px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
