@@ -39,7 +39,14 @@ export default function StatsPanel({ stats }) {
           </p>
         </div>
 
-        {trend_direction && (
+        {num_days !== undefined && num_days !== null && num_days < 7 ? (
+          <div
+            className="trend-pill"
+            style={{ backgroundColor: 'rgba(148, 163, 184, 0.12)', color: '#64748b' }}
+          >
+            <span className="trend-name">Not enough days for a trend</span>
+          </div>
+        ) : trend_direction ? (
           <div
             className="trend-pill"
             style={{ backgroundColor: trendBg, color: trendColor }}
@@ -55,7 +62,7 @@ export default function StatsPanel({ stats }) {
               </span>
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="stats-cards-grid">

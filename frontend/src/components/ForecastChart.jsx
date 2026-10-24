@@ -34,7 +34,7 @@ function formatShortDate(str) {
   return str;
 }
 
-export default function ForecastChart({ daily = [], forecast = [] }) {
+export default function ForecastChart({ daily = [], actuals = null, forecast = [] }) {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 560px)').matches : false
   );
@@ -46,13 +46,15 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, []);
+
   const { chartData, separatorIndex } = useMemo(() => {
-    if (!daily || daily.length === 0 || !forecast || forecast.length === 0) {
+    const sourceActuals = actuals && actuals.length > 0 ? actuals : daily;
+    if (!sourceActuals || sourceActuals.length === 0 || !forecast || forecast.length === 0) {
       return { chartData: null, separatorIndex: -1 };
     }
 
     // Last 30 days of actuals
-    const recentActuals = daily.slice(-30);
+    const recentActuals = sourceActuals.slice(-30);
     const labels = [
       ...recentActuals.map((d) => d.date),
       ...forecast.map((f) => f.date),
@@ -101,7 +103,7 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
     };
 
     return { chartData: data, separatorIndex: recentActuals.length - 1 };
-  }, [daily, forecast]);
+  }, [daily, actuals, forecast]);
 
   // Plugin to draw subtle vertical marker separating actuals from forecast
   const separatorPlugin = useMemo(() => {
