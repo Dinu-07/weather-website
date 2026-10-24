@@ -2367,3 +2367,291 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ================================================================
+   MOBILE LAYOUT FIXES — fix/location-mobile
+   ALL rules in this block are inside @media (max-width: 560px)
+   or narrower queries. No existing rules above are touched.
+   ================================================================ */
+
+/* ---- 1. Horizontal overflow: prevent chart cards from spilling --- */
+@media (max-width: 560px) {
+  /* Ensure the whole app can't scroll horizontally */
+  .google-weather-app,
+  .feed-container {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* Charts two-column grid → single column */
+  .charts-two-col-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Cards in the grid must not overflow */
+  .charts-two-col-grid .weather-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Chart wrappers: fill card width, contain canvas */
+  .chart-card-inner {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .chart-canvas-container {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    min-height: 260px;
+  }
+}
+
+/* ---- 2. Date row layout on mobile ---- */
+@media (max-width: 560px) {
+  .controls-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .date-inputs-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    align-items: end;
+  }
+
+  .date-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .date-label {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .clean-date-input {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px; /* prevents iOS zoom */
+    min-height: 44px;
+    padding: 10px 10px;
+  }
+
+  .clean-submit-btn {
+    width: 100%;
+    min-height: 44px;
+    font-size: 15px;
+  }
+}
+
+/* Extra-narrow: stack From and To into one column */
+@media (max-width: 340px) {
+  .date-inputs-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- 3. Popular chips: label on own line, wrap at 320px ---- */
+@media (max-width: 560px) {
+  .presets-pill-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    row-gap: 8px;
+  }
+
+  .presets-caption {
+    width: 100%;
+    display: block;
+    font-size: 12px;
+    margin-bottom: 2px;
+  }
+
+  .preset-pill {
+    font-size: 13px;
+    min-height: 36px;
+    padding: 6px 14px;
+  }
+}
+
+/* ---- 5. Telemetry cards: remove fixed heights / stretching on mobile ---- */
+@media (max-width: 560px) {
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .telemetry-card {
+    /* Remove fixed min-height and space-between stretching */
+    min-height: unset;
+    height: auto;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .telemetry-body {
+    flex: none;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .telemetry-main-content {
+    flex: none;
+    min-height: unset;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  .telemetry-bottom-group {
+    margin-top: 0;
+    gap: 8px;
+  }
+
+  .primary-metric {
+    height: auto;
+  }
+
+  .telemetry-live-slot-placeholder {
+    min-height: unset;
+    display: none; /* no dead space on mobile */
+  }
+
+  /* No ellipsis: full text always visible */
+  .card-title,
+  .metric-subtitle,
+  .sub-stat-item,
+  .live-strip-sub {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+}
+
+/* ---- 6. Precipitation: hide duplicate "Avg Probability" footer line on mobile ---- */
+@media (max-width: 560px) {
+  .precip-footer-probability {
+    display: none;
+  }
+}
+
+/* ---- 7. Historical hero card: move lottie backdrop so it never overlaps temperature text ---- */
+@media (max-width: 560px) {
+  .hero-lottie-backdrop {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    width: 110px;
+    height: 110px;
+    opacity: 0.25;
+    align-items: flex-start;
+    justify-content: flex-end;
+  }
+}
+
+/* ---- 8. Temperature stat cards: 2×2 grid on mobile ---- */
+@media (max-width: 560px) {
+  .stats-cards-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 340px) {
+  .stats-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- 9. Hero orbs: full screen width, edges anchored to viewport ---- */
+@media (max-width: 560px) {
+  .hero-button-row {
+    position: relative;
+    left: 0;
+    right: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  /* Left orb: left edge flush with viewport left */
+  .hero-orb-left {
+    left: calc(-1 * (var(--orb-w, 89px) / 2 - 12px));
+  }
+
+  /* Right orb: right edge flush with viewport right */
+  .hero-orb-right {
+    right: calc(-1 * (var(--orb-w, 89px) / 2 - 12px));
+  }
+
+  /* Orb labels: directly below visible orb portion */
+  .hero-orb-label-left,
+  .hero-orb-label-right {
+    top: calc(100% + 8px);
+    transform: none;
+  }
+
+  .hero-orb-label-left {
+    left: 0;
+  }
+
+  .hero-orb-label-right {
+    right: 0;
+  }
+}
+
+/* ---- 10. Header: hide "Historical & Forecast" badge at 360px so logo never wraps ---- */
+@media (max-width: 360px) {
+  .brand-badge {
+    display: none;
+  }
+}
+
+/* ---- 11. Burger menu drawer: prevent overflow / clipping ---- */
+@media (max-width: 560px) {
+  .hero-nav-drawer {
+    /* Ensure drawer never overflows the viewport */
+    right: 8px;
+    max-width: calc(100vw - 16px);
+    box-sizing: border-box;
+  }
+
+  /* AQI tooltip: keep within card bounds on mobile */
+  .card-top-row {
+    position: relative;
+  }
+
+  .aqi-info-tooltip-wrap {
+    position: static;
+  }
+
+  .aqi-info-popover {
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    max-width: 100% !important;
+    top: calc(100% + 4px) !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* ---- Touch-target: crosshair button and AQI info button ---- */
+@media (max-width: 560px) {
+  .pill-location-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .aqi-info-btn {
+    padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+}

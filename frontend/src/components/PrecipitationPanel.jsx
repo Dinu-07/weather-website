@@ -77,15 +77,17 @@ export default function PrecipitationPanel({ daily = [], stats = null, live = nu
         </div>
 
         <div className="telemetry-bottom-group">
-          <div className="telemetry-sub-stats">
-            {rawAvgProbability !== null ? (
+          {rawAvgProbability !== null ? (
+            <div className="telemetry-sub-stats precip-footer-probability">
               <span className="sub-stat-item">
                 <span className="sub-stat-label">Avg Probability:</span> {animatedProbability}%
               </span>
-            ) : (
+            </div>
+          ) : (
+            <div className="telemetry-sub-stats">
               <span className="sub-stat-item">Rain probability tracked for recent dates</span>
-            )}
-          </div>
+            </div>
+          )}
 
           {live && live.precipitation !== undefined && live.precipitation !== null ? (
             <div className="telemetry-live-strip">
