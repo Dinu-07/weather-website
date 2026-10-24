@@ -3,6 +3,8 @@ import axios from 'axios';
 import { Lottie } from 'lottie-react';
 
 import LocationForm from './components/LocationForm';
+import ErrorState from './components/ErrorState';
+import { getLiveWeather } from './utils/liveWeather';
 import StatsPanel from './components/StatsPanel';
 import HumidityPanel from './components/HumidityPanel';
 import UVIndexPanel from './components/UVIndexPanel';
@@ -133,17 +135,17 @@ export default function App() {
     setIsAnimationPlaying(!isAnimationPlaying);
   };
 
-  const fetchCurrentConditions = async (lat, lon) => {
+  const fetchCurrentConditions = async (lat, lon, forceRefresh = false) => {
     setCurrentLoading(true);
     setCurrentError(null);
     const baseUrl = import.meta.env.VITE_API_URL;
     try {
-      const res = await axios.get(`${baseUrl}/api/current`, { params: { lat, lon } });
-      setCurrentWeather(res.data);
+      const data = await getLiveWeather(lat, lon, baseUrl, forceRefresh);
+      setCurrentWeather(data);
     } catch (err) {
       console.error('Current Weather Error:', err);
       setCurrentError(
-        err.response?.data?.detail || err.message || 'Unable to load live current conditions'
+        err.message || 'Live data is temporarily busy. Please try again shortly.'
       );
     } finally {
       setCurrentLoading(false);
@@ -176,11 +178,10 @@ export default function App() {
       setForecast(forecastRes.data.forecast || []);
     } catch (err) {
       console.error('API Error:', err);
-      setError(
-        err.response?.data?.detail ||
-        err.message ||
-        'Failed to fetch weather data. Open-Meteo may have no records for this coordinate or date range.'
-      );
+      const friendlyMsg =
+        err.response?.data?.message ||
+        'Weather data is temporarily busy. Please try again shortly.';
+      setError(friendlyMsg);
     } finally {
       setLoading(false);
     }
@@ -386,28 +387,18 @@ export default function App() {
           locationName={currentLocationName}
           isLoading={currentLoading}
           error={currentError}
-          onRefresh={() => fetchCurrentConditions(currentCoords.lat, currentCoords.lon)}
+          onRefresh={() => fetchCurrentConditions(currentCoords.lat, currentCoords.lon, true)}
         />
 
         {/* Error Banner */}
         {error && (
           <section className="error-card">
-            <div className="error-card-inner">
-              <span className="error-icon">⚠️</span>
-              <div className="error-content">
-                <h4>Unable to Load Weather Data</h4>
-                <p>{error}</p>
-                {lastQuery && (
-                  <button
-                    type="button"
-                    className="retry-btn"
-                    onClick={() => fetchWeatherData(lastQuery)}
-                  >
-                    Try Again
-                  </button>
-                )}
-              </div>
-            </div>
+            <ErrorState
+              title="Unable to Load Weather Data"
+              message={error}
+              onRetry={lastQuery ? () => fetchWeatherData(lastQuery) : null}
+              autoRetry={true}
+            />
           </section>
         )}
 

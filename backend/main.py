@@ -1,13 +1,22 @@
+import logging
 import os
 from datetime import date
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import requests
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from resilience import (
+    UpstreamError,
+    UpstreamRateLimitError,
+    UpstreamServiceError,
+    cached_open_meteo_call,
+    open_meteo_request,
+)
 from weather_core import (
     add_fahrenheit_columns,
     analyze_trends,
@@ -17,6 +26,8 @@ from weather_core import (
     get_current_weather,
     simple_forecast,
 )
+
+logger = logging.getLogger("weather_backend")
 
 app = FastAPI(title="Weather Analysis API", version="1.0.0")
 
@@ -36,34 +47,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory cache keyed by (lat, lon, start, end) -> pd.DataFrame
-weather_cache: Dict[Tuple[float, float, str, str], pd.DataFrame] = {}
+
+# Exception Handlers: translate upstream errors to clean client responses
+@app.exception_handler(UpstreamRateLimitError)
+def upstream_rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "upstream_rate_limited",
+            "message": "Live data is temporarily busy. Please try again shortly.",
+        },
+    )
+
+
+@app.exception_handler(UpstreamServiceError)
+def upstream_service_handler(request, exc):
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "upstream_service_error",
+            "message": "Live data is temporarily busy. Please try again shortly.",
+        },
+    )
 
 
 def get_cached_or_fetch_weather(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
     """
-    Retrieve processed weather data from in-memory cache if present;
+    Retrieve processed weather data from in-memory TTL cache (1 hour) if present;
     otherwise fetch from Open-Meteo, clean, enrich with Fahrenheit columns,
     and merge air quality telemetry.
+    If upstream fails, serves stale cache up to 1 hour old with stale: True.
     """
-    cache_key = (round(float(lat), 4), round(float(lon), 4), str(start), str(end))
-    if cache_key in weather_cache:
-        return weather_cache[cache_key]
+    cache_key = ("weather_archive", round(float(lat), 4), round(float(lon), 4), str(start), str(end))
 
-    raw_df = fetch_weather_data(latitude=lat, longitude=lon, start_date=start, end_date=end)
-    cleaned_df = clean_data(raw_df)
-    full_df = add_fahrenheit_columns(cleaned_df)
+    def _fetch():
+        raw_df = fetch_weather_data(latitude=lat, longitude=lon, start_date=start, end_date=end)
+        cleaned_df = clean_data(raw_df)
+        full_df = add_fahrenheit_columns(cleaned_df)
 
-    # Fetch and merge Air Quality telemetry
-    aq_df = fetch_air_quality(latitude=lat, longitude=lon, start_date=start, end_date=end)
-    if not aq_df.empty:
-        full_df = pd.merge(full_df, aq_df, on="date", how="left")
-    else:
-        for c in ["european_aqi", "us_aqi", "pm2_5", "pm10"]:
-            full_df[c] = None
+        # Fetch and merge Air Quality telemetry
+        aq_df = fetch_air_quality(latitude=lat, longitude=lon, start_date=start, end_date=end)
+        if not aq_df.empty:
+            full_df = pd.merge(full_df, aq_df, on="date", how="left")
+        else:
+            for c in ["european_aqi", "us_aqi", "pm2_5", "pm10"]:
+                full_df[c] = None
 
-    weather_cache[cache_key] = full_df
-    return full_df
+        return full_df
+
+    return cached_open_meteo_call(cache_key, ttl_seconds=3600, fetch_fn=_fetch, max_stale_age=3600)
 
 
 @app.get("/api/health")
@@ -89,20 +121,31 @@ def get_weather(
         df_export["date"] = df_export["date"].dt.strftime("%Y-%m-%d")
         daily_records = df_export.replace({np.nan: None}).to_dict(orient="records")
 
+        is_stale = getattr(full_df, "attrs", {}).get("stale", False)
         return {
             "daily": daily_records,
             "stats": stats,
+            "stale": is_stale,
         }
+    except (UpstreamRateLimitError, UpstreamServiceError):
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error in /api/weather: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "weather_data_error",
+                "message": "Live data is temporarily busy. Please try again shortly.",
+            },
+        )
 
 
 @app.get("/api/forecast")
 def get_forecast(
     lat: float = Query(..., description="Latitude coordinate"),
     lon: float = Query(..., description="Longitude coordinate"),
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
+    start: str = Query(..., description="Historical start date (YYYY-MM-DD)"),
+    end: str = Query(..., description="Historical end date (YYYY-MM-DD)"),
     days: int = Query(7, ge=1, le=30, description="Number of days to forecast ahead"),
 ):
     """
@@ -116,11 +159,22 @@ def get_forecast(
         f_export["date"] = pd.to_datetime(f_export["date"]).dt.strftime("%Y-%m-%d")
         forecast_records = f_export.replace({np.nan: None}).to_dict(orient="records")
 
+        is_stale = getattr(full_df, "attrs", {}).get("stale", False)
         return {
             "forecast": forecast_records,
+            "stale": is_stale,
         }
+    except (UpstreamRateLimitError, UpstreamServiceError):
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error in /api/forecast: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "forecast_error",
+                "message": "Live data is temporarily busy. Please try again shortly.",
+            },
+        )
 
 
 @app.get("/api/current")
@@ -139,8 +193,17 @@ def get_current(
         response.headers["Expires"] = "0"
         current_data = get_current_weather(lat, lon)
         return current_data
+    except (UpstreamRateLimitError, UpstreamServiceError):
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error in /api/current: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "current_conditions_error",
+                "message": "Live data is temporarily busy. Please try again shortly.",
+            },
+        )
 
 
 @app.get("/api/geocode")
@@ -150,8 +213,11 @@ def geocode_location(
     """
     Search places using Open-Meteo's Geocoding API.
     Returns a simplified list of matches (name, country, admin1/region, latitude, longitude).
+    Cached for 24 hours.
     """
-    try:
+    cache_key = ("geocode", query.strip().lower())
+
+    def _fetch():
         url = "https://geocoding-api.open-meteo.com/v1/search"
         params = {
             "name": query.strip(),
@@ -159,8 +225,7 @@ def geocode_location(
             "language": "en",
             "format": "json",
         }
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
+        res = open_meteo_request(url, params=params, timeout=10)
         data = res.json()
 
         results = data.get("results", []) or []
@@ -181,7 +246,18 @@ def geocode_location(
                 "longitude": item.get("longitude"),
                 "display_name": display_name,
             })
-
         return matches
+
+    try:
+        return cached_open_meteo_call(cache_key, ttl_seconds=86400, fetch_fn=_fetch, max_stale_age=86400)
+    except (UpstreamRateLimitError, UpstreamServiceError):
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Geocoding error for query '{query}': {e}", exc_info=True)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "geocode_error",
+                "message": "Live data is temporarily busy. Please try again shortly.",
+            },
+        )

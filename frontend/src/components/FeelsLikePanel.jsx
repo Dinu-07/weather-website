@@ -108,15 +108,17 @@ export default function FeelsLikePanel({ daily = [], stats = null, live = null }
         <div className="telemetry-body">
           <div className="telemetry-main-content">
             <div className="feels-like-comparison-row">
-              <div className="primary-metric">
-                <span className="metric-number">{animatedFeels}</span>
-                <span className="metric-unit">°C</span>
-                <span className="metric-subtitle">Apparent</span>
+              <div className="feels-metric-block">
+                <div className="feels-metric-val">
+                  <span className="metric-number">{animatedFeels}</span>
+                  <span className="metric-unit">°C</span>
+                </div>
+                <span className="feels-metric-label">Apparent</span>
               </div>
 
               <div className="actual-temp-comparison">
-                <span className="actual-temp-label">Actual Mean</span>
                 <span className="actual-temp-val">{animatedActual !== null ? `${animatedActual}°C` : '--'}</span>
+                <span className="actual-temp-label">Actual Mean</span>
               </div>
             </div>
 
