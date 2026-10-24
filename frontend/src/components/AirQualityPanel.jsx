@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCountUp } from '../hooks/useCountUp';
 
 // Get band info for US AQI
@@ -23,6 +23,18 @@ function getEuropeanAQIBand(aqi) {
 
 export default function AirQualityPanel({ daily = [], live = null }) {
   const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipWrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!showTooltip) return;
+    const handleOutside = (e) => {
+      if (tooltipWrapRef.current && !tooltipWrapRef.current.contains(e.target)) {
+        setShowTooltip(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleOutside);
+    return () => document.removeEventListener('pointerdown', handleOutside);
+  }, [showTooltip]);
   const isArr = Array.isArray(daily);
   const validUSAQI = isArr
     ? daily
@@ -80,7 +92,7 @@ export default function AirQualityPanel({ daily = [], live = null }) {
         <div className="card-icon-title">
           <span className="card-icon">🍃</span>
           <span className="card-title">Air Quality</span>
-          <div className="aqi-info-tooltip-wrap">
+          <div className="aqi-info-tooltip-wrap" ref={tooltipWrapRef}>
             <button
               type="button"
               className="aqi-info-btn"

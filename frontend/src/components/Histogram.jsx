@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -20,6 +20,17 @@ ChartJS.register(
 );
 
 export default function Histogram({ daily = [], stats = {} }) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 560px)').matches : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 560px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
   const { chartData, bins, avgTemp } = useMemo(() => {
     if (!daily || daily.length === 0) return { chartData: null, bins: [], avgTemp: null };
 
@@ -117,6 +128,12 @@ export default function Histogram({ daily = [], stats = {} }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: isMobile
+      ? {
+          mode: 'nearest',
+          intersect: false,
+        }
+      : undefined,
     plugins: {
       title: {
         display: true,
@@ -150,6 +167,10 @@ export default function Histogram({ daily = [], stats = {} }) {
         grid: { display: false },
         ticks: {
           color: '#94a3b8',
+          autoSkip: isMobile ? true : undefined,
+          maxTicksLimit: isMobile ? 6 : undefined,
+          minRotation: isMobile ? 0 : undefined,
+          maxRotation: isMobile ? 0 : undefined,
           font: { family: "'Inter', sans-serif", size: 11 },
         },
       },
@@ -158,6 +179,7 @@ export default function Histogram({ daily = [], stats = {} }) {
         ticks: {
           color: '#94a3b8',
           precision: 0,
+          maxTicksLimit: isMobile ? 6 : undefined,
           font: { family: "'Inter', sans-serif", size: 11 },
         },
       },
@@ -170,7 +192,7 @@ export default function Histogram({ daily = [], stats = {} }) {
 
   return (
     <div className="chart-card-inner">
-      <div className="chart-canvas-container" style={{ height: '320px' }}>
+      <div className="chart-canvas-container" style={{ height: isMobile ? '280px' : '320px', minHeight: '260px' }}>
         <Bar data={chartData} options={options} plugins={[meanLinePlugin]} />
       </div>
     </div>

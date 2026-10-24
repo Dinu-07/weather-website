@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -21,7 +21,31 @@ ChartJS.register(
   Legend
 );
 
+function formatShortDate(str) {
+  if (typeof str === 'string' && str.includes('-')) {
+    const parts = str.split('-');
+    if (parts.length === 3) {
+      const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+    }
+  }
+  return str;
+}
+
 export default function ForecastChart({ daily = [], forecast = [] }) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 560px)').matches : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 560px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
   const { chartData, separatorIndex } = useMemo(() => {
     if (!daily || daily.length === 0 || !forecast || forecast.length === 0) {
       return { chartData: null, separatorIndex: -1 };
@@ -115,7 +139,7 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
-      mode: 'index',
+      mode: isMobile ? 'nearest' : 'index',
       intersect: false,
     },
     plugins: {
@@ -129,14 +153,14 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
       },
       legend: {
         position: 'top',
-        align: 'end',
+        align: isMobile ? 'center' : 'end',
         labels: {
           usePointStyle: true,
           pointStyle: 'circle',
           boxWidth: 8,
           boxHeight: 8,
           color: '#64748b',
-          font: { family: "'Inter', sans-serif", size: 12 },
+          font: { family: "'Inter', sans-serif", size: isMobile ? 11 : 12 },
         },
       },
       tooltip: {
@@ -162,14 +186,24 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
         grid: { color: 'rgba(148, 163, 184, 0.12)' },
         ticks: {
           color: '#94a3b8',
-          maxTicksLimit: 12,
+          autoSkip: true,
+          maxTicksLimit: isMobile ? 5 : 12,
+          minRotation: isMobile ? 0 : undefined,
+          maxRotation: isMobile ? 0 : undefined,
           font: { family: "'Inter', sans-serif", size: 11 },
+          callback: isMobile
+            ? function (val, index) {
+                const label = this.getLabelForValue ? this.getLabelForValue(val) : (chartData?.labels?.[index] ?? val);
+                return formatShortDate(label);
+              }
+            : undefined,
         },
       },
       y: {
         grid: { color: 'rgba(148, 163, 184, 0.12)' },
         ticks: {
           color: '#94a3b8',
+          maxTicksLimit: isMobile ? 6 : undefined,
           font: { family: "'Inter', sans-serif", size: 11 },
           callback: (value) => `${value}°C`,
         },
@@ -183,7 +217,7 @@ export default function ForecastChart({ daily = [], forecast = [] }) {
 
   return (
     <div className="chart-card-inner">
-      <div className="chart-canvas-container" style={{ height: '320px' }}>
+      <div className="chart-canvas-container" style={{ height: isMobile ? '280px' : '320px', minHeight: '260px' }}>
         <Line data={chartData} options={options} plugins={[separatorPlugin]} />
       </div>
     </div>

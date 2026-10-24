@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { reverseGeocode } from '../utils/reverseGeocode';
 
 const PRESETS = [
   { name: 'Peddapuram', fullName: 'Peddapuram, Andhra Pradesh, India', lat: 17.08, lon: 82.13 },
@@ -13,6 +12,12 @@ export default function LocationForm({
   onSubmit,
   isLoading,
   currentLocationName = 'Peddapuram, Andhra Pradesh, India',
+  searchInputRef = null,
+  // Shared detection helpers passed down from App so the crosshair button
+  // uses the exact same logic as the page-load flow.
+  detectMyLocation,
+  reverseGeocode,
+  onDetected,
 }) {
   const [selectedLocation, setSelectedLocation] = useState({
     name: 'Peddapuram',
@@ -27,7 +32,6 @@ export default function LocationForm({
 
   // Crosshair recovery state
   const [isLocating, setIsLocating] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
 
   const [start, setStart] = useState(() => {
     return new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -38,11 +42,10 @@ export default function LocationForm({
 
   const searchContainerRef = useRef(null);
   const debounceTimerRef = useRef(null);
-  const toastTimerRef = useRef(null);
 
   const prevLocationRef = useRef(currentLocationName);
 
-  // Sync search input whenever active location changes from external action (e.g. initial auto-geo or preset)
+  // Sync search input whenever active location changes from external action
   useEffect(() => {
     if (prevLocationRef.current !== currentLocationName) {
       prevLocationRef.current = currentLocationName;
@@ -58,10 +61,7 @@ export default function LocationForm({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(event.target)
-      ) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
         setIsDropdownOpen(false);
       }
     };
@@ -73,92 +73,45 @@ export default function LocationForm({
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
-  const showToast = (message, duration = 5000) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(message);
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, duration);
-  };
-
-  // Crosshair button click handler (Recovery path)
-  const handleLocateMe = () => {
-    if (!navigator.geolocation) {
-      showToast(
-        "Location is blocked. Allow it from the lock icon in your browser's address bar, or search for a city."
-      );
+  // Crosshair button: always calls detectMyLocation() — never uses any stored
+  // or previously selected location. On failure, silently focuses the search input.
+  const handleLocateMe = async () => {
+    if (!navigator.geolocation || typeof detectMyLocation !== 'function') {
+      searchInputRef?.current?.focus();
+      searchInputRef?.current?.select();
       return;
     }
 
     setIsLocating(true);
+    try {
+      const { lat, lon } = await detectMyLocation();
+      const name = await reverseGeocode(lat, lon);
+      setIsLocating(false);
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        setIsLocating(false);
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
+      // Update the search bar to reflect the detected place
+      setSelectedLocation({
+        name: name.split(',')[0] || name,
+        fullName: name,
+        lat,
+        lon,
+      });
+      setSearchQuery(name);
+      setIsDropdownOpen(false);
+      setSuggestions([]);
 
-        try {
-          const placeName = await reverseGeocode(lat, lon);
-          setSelectedLocation({
-            name: placeName.split(',')[0] || placeName,
-            fullName: placeName,
-            lat,
-            lon,
-          });
-          setSearchQuery(placeName);
-          setIsDropdownOpen(false);
-          setSuggestions([]);
-
-          onSubmit({
-            lat,
-            lon,
-            start,
-            end,
-            locationName: placeName,
-          });
-        } catch (err) {
-          console.warn('LocateMe reverse geocoding error:', err);
-          const fallbackName = `Your location (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`;
-          setSelectedLocation({
-            name: 'Your location',
-            fullName: fallbackName,
-            lat,
-            lon,
-          });
-          setSearchQuery(fallbackName);
-          onSubmit({
-            lat,
-            lon,
-            start,
-            end,
-            locationName: fallbackName,
-          });
-        }
-      },
-      (error) => {
-        setIsLocating(false);
-        // Show auto-dismissing toast only when user clicks this button
-        if (error.code === 1 || error.code === error.PERMISSION_DENIED) {
-          showToast(
-            "Location is blocked. Allow it from the lock icon in your browser's address bar, or search for a city."
-          );
-        } else {
-          showToast(
-            "Location is unavailable. Please check your browser settings or search for a city."
-          );
-        }
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 10000,
-        maximumAge: 600000,
+      // Trigger full analysis via the shared App helper
+      if (typeof onDetected === 'function') {
+        onDetected(lat, lon, name);
       }
-    );
+    } catch {
+      // denied, timeout, unavailable — focus search silently, no message
+      setIsLocating(false);
+      searchInputRef?.current?.focus();
+      searchInputRef?.current?.select();
+    }
   };
 
   // Handle debounced geocoding search
@@ -166,9 +119,7 @@ export default function LocationForm({
     const query = e.target.value;
     setSearchQuery(query);
 
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
     if (!query || query.trim().length < 2) {
       setSuggestions([]);
@@ -246,22 +197,6 @@ export default function LocationForm({
 
   return (
     <div className="search-control-wrapper">
-      {/* Auto-dismissing Location Blocked Toast */}
-      {toastMessage && (
-        <div className="location-toast" role="alert" aria-live="polite">
-          <span className="toast-icon" aria-hidden="true">🔒</span>
-          <span className="toast-text">{toastMessage}</span>
-          <button
-            type="button"
-            className="toast-close-btn"
-            onClick={() => setToastMessage(null)}
-            aria-label="Dismiss toast"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       <form onSubmit={handleSubmit} className="search-form-layout">
         {/* Pill-shaped search bar */}
         <div className="pill-search-container" ref={searchContainerRef}>
@@ -278,6 +213,7 @@ export default function LocationForm({
                 if (suggestions.length > 0) setIsDropdownOpen(true);
               }}
               disabled={isLoading || isLocating}
+              ref={searchInputRef}
             />
 
             {isSearching && <span className="pill-spinner" />}
@@ -297,7 +233,7 @@ export default function LocationForm({
               </button>
             )}
 
-            {/* Crosshair "Use my location" button inside the right end of the search bar */}
+            {/* Crosshair "Use my location" button */}
             <button
               type="button"
               className={`pill-location-btn ${isLocating ? 'locating' : ''}`}
