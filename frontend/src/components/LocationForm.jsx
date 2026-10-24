@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { reverseGeocode } from '../utils/reverseGeocode';
+import { getHighAccuracyPosition } from '../utils/useHighAccuracyGeo';
 
 const PRESETS = [
   { name: 'Peddapuram', fullName: 'Peddapuram, Andhra Pradesh, India', lat: 17.08, lon: 82.13 },
@@ -13,6 +14,7 @@ export default function LocationForm({
   onSubmit,
   isLoading,
   currentLocationName = 'Peddapuram, Andhra Pradesh, India',
+  searchInputRef = null,
 }) {
   const [selectedLocation, setSelectedLocation] = useState({
     name: 'Peddapuram',
@@ -69,11 +71,12 @@ export default function LocationForm({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Clean up timers on unmount
+  // Clean up timers and in-flight geo watch on unmount
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (geoAbortRef.current) geoAbortRef.current.abort();
     };
   }, []);
 
@@ -85,80 +88,68 @@ export default function LocationForm({
     }, duration);
   };
 
-  // Crosshair button click handler (Recovery path)
+  // Ref to abort an in-flight high-accuracy watch if the component unmounts
+  const geoAbortRef = useRef(null);
+
+  // Crosshair button click handler — uses high-accuracy watchPosition
   const handleLocateMe = () => {
     if (!navigator.geolocation) {
-      showToast(
-        "Location is blocked. Allow it from the lock icon in your browser's address bar, or search for a city."
-      );
+      // No geolocation support — just focus the search input silently
+      searchInputRef?.current?.focus();
+      searchInputRef?.current?.select();
       return;
     }
 
+    // Cancel any previous in-flight watch
+    if (geoAbortRef.current) {
+      geoAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    geoAbortRef.current = controller;
+
     setIsLocating(true);
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
+    getHighAccuracyPosition(controller.signal)
+      .then(async ({ lat, lon, accuracy }) => {
         setIsLocating(false);
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
 
-        try {
-          const placeName = await reverseGeocode(lat, lon);
-          setSelectedLocation({
-            name: placeName.split(',')[0] || placeName,
-            fullName: placeName,
-            lat,
-            lon,
-          });
-          setSearchQuery(placeName);
-          setIsDropdownOpen(false);
-          setSuggestions([]);
-
-          onSubmit({
-            lat,
-            lon,
-            start,
-            end,
-            locationName: placeName,
-          });
-        } catch (err) {
-          console.warn('LocateMe reverse geocoding error:', err);
-          const fallbackName = `Your location (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`;
-          setSelectedLocation({
-            name: 'Your location',
-            fullName: fallbackName,
-            lat,
-            lon,
-          });
-          setSearchQuery(fallbackName);
-          onSubmit({
-            lat,
-            lon,
-            start,
-            end,
-            locationName: fallbackName,
-          });
+        // Reject coarse / IP-based fixes silently — just focus the search
+        if (accuracy > 5000) {
+          searchInputRef?.current?.focus();
+          searchInputRef?.current?.select();
+          return;
         }
-      },
-      (error) => {
+
+        const placeName = await reverseGeocode(lat, lon);
+
+        setSelectedLocation({
+          name: placeName.split(',')[0] || placeName,
+          fullName: placeName,
+          lat,
+          lon,
+        });
+        setSearchQuery(placeName);
+        setIsDropdownOpen(false);
+        setSuggestions([]);
+
+        onSubmit({ lat, lon, start, end, locationName: placeName });
+      })
+      .catch((err) => {
         setIsLocating(false);
-        // Show auto-dismissing toast only when user clicks this button
-        if (error.code === 1 || error.code === error.PERMISSION_DENIED) {
+        if (err?.message === 'Aborted') return; // intentional cancel — no action
+
+        // Permission denied: show toast (only on explicit user click)
+        const code = err?.code;
+        if (code === 1 /* PERMISSION_DENIED */) {
           showToast(
             "Location is blocked. Allow it from the lock icon in your browser's address bar, or search for a city."
           );
         } else {
-          showToast(
-            "Location is unavailable. Please check your browser settings or search for a city."
-          );
+          // Any other failure (timeout, unavailable) — focus search silently
+          searchInputRef?.current?.focus();
+          searchInputRef?.current?.select();
         }
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 10000,
-        maximumAge: 600000,
-      }
-    );
+      });
   };
 
   // Handle debounced geocoding search
@@ -278,6 +269,7 @@ export default function LocationForm({
                 if (suggestions.length > 0) setIsDropdownOpen(true);
               }}
               disabled={isLoading || isLocating}
+              ref={searchInputRef}
             />
 
             {isSearching && <span className="pill-spinner" />}

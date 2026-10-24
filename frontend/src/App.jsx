@@ -23,6 +23,7 @@ import WeatherPulseLogo from './components/WeatherPulseLogo';
 import SplashScreen from './components/SplashScreen';
 import Hero, { CONDITION_METADATA } from './components/Hero';
 import { reverseGeocode } from './utils/reverseGeocode';
+import { getHighAccuracyPosition } from './utils/useHighAccuracyGeo';
 
 import sunnyAnim from './assets/lottie/sunny.json';
 import cloudyAnim from './assets/lottie/cloudy.json';
@@ -31,6 +32,31 @@ import snowyAnim from './assets/lottie/snowy.json';
 import stormyAnim from './assets/lottie/stormy.json';
 
 import './App.css';
+
+// ---------- localStorage helpers (all wrapped in try/catch) ----------
+const LS_KEY = 'wp:location';
+function loadSavedLocation() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.name === 'string' &&
+      typeof parsed.lat === 'number' &&
+      typeof parsed.lon === 'number'
+    ) {
+      return parsed; // { name, lat, lon }
+    }
+    return null;
+  } catch { return null; }
+}
+function saveLocation(name, lat, lon) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ name, lat, lon })); } catch { /* ignore */ }
+}
+
+// Accuracy gate: reject anything coarser than 5 km (likely IP-based estimate)
+const MAX_ACCEPTED_ACCURACY_M = 5000;
 
 // Map WMO dominant weathercode to readable condition and Lottie animation
 function getWeatherDetails(code) {
@@ -92,10 +118,12 @@ export default function App() {
   const [currentLocationName, setCurrentLocationName] = useState('Peddapuram, Andhra Pradesh, India');
 
   // Guard refs for single-invocation page load geolocation
-  const userSelectedRef = useRef(false);
-  const geoRequestedRef = useRef(false);
+  const userSelectedRef  = useRef(false); // true once user manually picks a place
+  const geoRequestedRef  = useRef(false);
   const defaultLoadedRef = useRef(false);
   const fallbackTimerRef = useRef(null);
+  const geoAbortRef      = useRef(null);  // AbortController for the watch
+  const searchInputRef   = useRef(null);  // forwarded to LocationForm
 
   // Live "Right Now" current conditions state
   const [currentWeather, setCurrentWeather] = useState(null);
@@ -103,17 +131,17 @@ export default function App() {
   const [currentError, setCurrentError] = useState(null);
   const [currentCoords, setCurrentCoords] = useState({ lat: 17.08, lon: 82.13 });
 
-  // Master Animation play/pause control (controls canvas particles, CSS animations, and Lottie)
+  // Master Animation play/pause control
   const [isAnimationPlaying, setIsAnimationPlaying] = useState(true);
   const lottieRef = useRef(null);
 
-  // Splash screen completion state (fires onFinish callback)
+  // Splash screen completion state
   const [splashDone, setSplashDone] = useState(false);
 
-  // Hero entrance animation completion state (fires after entrance finishes)
+  // Hero entrance animation completion state
   const [heroEntranceDone, setHeroEntranceDone] = useState(false);
 
-  // Featured condition preview state (null = show live condition, or string from CONDITIONS_ORDER)
+  // Featured condition preview state
   const [previewCondition, setPreviewCondition] = useState(null);
 
   // Sync theme to document root and meta theme-color
@@ -230,102 +258,94 @@ export default function App() {
     fetchCurrentConditions(17.08, 82.13);
   };
 
+  // Helper: run weather analysis for given coords + name
+  const applyDetectedLocation = (lat, lon, name) => {
+    setCurrentLocationName(name);
+    setCurrentCoords({ lat, lon });
+    const today = new Date().toISOString().split('T')[0];
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+    fetchWeatherData({ lat, lon, start: sixMonthsAgo, end: today, locationName: name });
+    fetchCurrentConditions(lat, lon);
+  };
+
   // Flow on page load: wait for splashDone AND heroEntranceDone
   useEffect(() => {
     if (!splashDone || !heroEntranceDone) return;
     if (geoRequestedRef.current) return;
     geoRequestedRef.current = true;
 
-    // Skip entirely if a location is already selected by user
-    if (userSelectedRef.current) return;
+    // Priority 2a: use saved location from last session — skip geolocation entirely
+    const saved = loadSavedLocation();
+    if (saved) {
+      userSelectedRef.current = true;
+      applyDetectedLocation(saved.lat, saved.lon, saved.name);
+      return;
+    }
 
-    const GEO_OPTIONS = {
-      enableHighAccuracy: false,
-      timeout: 10000,
-      maximumAge: 600000,
-    };
-
-    const requestPosition = () => {
-      // While native popup is waiting for an answer, keep interface in loading/scanning state
-      setLoading(true);
-
-      // Fallback timer: if no response after about 8 seconds, load default location
-      fallbackTimerRef.current = setTimeout(() => {
-        loadDefaultLocation();
-      }, 8000);
-
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-          if (userSelectedRef.current) return;
-
-          const lat = position.coords.latitude;
-          const lon = position.coords.longitude;
-
-          try {
-            const placeName = await reverseGeocode(lat, lon);
-            if (userSelectedRef.current) return;
-
-            setCurrentLocationName(placeName);
-            setCurrentCoords({ lat, lon });
-
-            const today = new Date().toISOString().split('T')[0];
-            const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
-              .toISOString()
-              .split('T')[0];
-
-            fetchWeatherData({
-              lat,
-              lon,
-              start: sixMonthsAgo,
-              end: today,
-              locationName: placeName,
-            });
-            fetchCurrentConditions(lat, lon);
-          } catch (err) {
-            console.warn('Geolocation reverse geocoding failed:', err);
-            loadDefaultLocation();
-          }
-        },
-        (error) => {
-          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-          console.log('Geolocation dismissed or unavailable, continuing with default location:', error?.message);
-          loadDefaultLocation();
-        },
-        GEO_OPTIONS
-      );
-    };
-
+    // Priority 2b: no saved location — request browser position
     if (!navigator.geolocation) {
       loadDefaultLocation();
       return;
     }
+
+    const requestPosition = () => {
+      setLoading(true);
+
+      if (geoAbortRef.current) geoAbortRef.current.abort();
+      const controller = new AbortController();
+      geoAbortRef.current = controller;
+
+      // Fallback timer: if nothing resolves after 15.5 s, load default
+      fallbackTimerRef.current = setTimeout(() => {
+        if (!userSelectedRef.current) loadDefaultLocation();
+      }, 15500);
+
+      getHighAccuracyPosition(controller.signal)
+        .then(async ({ lat, lon, accuracy }) => {
+          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+          if (userSelectedRef.current) return;
+
+          // 2c: reject coarse / IP-based fixes silently
+          if (accuracy > MAX_ACCEPTED_ACCURACY_M) {
+            loadDefaultLocation();
+            return;
+          }
+
+          // 2d: accepted — reverse geocode, save, and run analysis
+          const name = await reverseGeocode(lat, lon);
+          if (userSelectedRef.current) return;
+
+          saveLocation(name, lat, lon);
+          applyDetectedLocation(lat, lon, name);
+        })
+        .catch((err) => {
+          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+          if (err?.message === 'Aborted') return;
+          if (!userSelectedRef.current) loadDefaultLocation();
+        });
+    };
 
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions
         .query({ name: 'geolocation' })
         .then((permissionStatus) => {
           if (userSelectedRef.current) return;
-
           if (permissionStatus.state === 'denied') {
-            // Silently continue with default location
             loadDefaultLocation();
           } else {
-            // "granted" or "prompt" -> call getCurrentPosition
             requestPosition();
           }
         })
-        .catch((err) => {
-          console.warn('Permissions query check failed, calling getCurrentPosition:', err);
-          requestPosition();
-        });
+        .catch(() => requestPosition());
     } else {
-      // Permissions API unavailable -> call getCurrentPosition directly
       requestPosition();
     }
 
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      if (geoAbortRef.current) geoAbortRef.current.abort();
     };
   }, [splashDone, heroEntranceDone]);
 
@@ -337,7 +357,6 @@ export default function App() {
   );
 
   // Live "Right Now" conditions take primary priority for the full-page ambient background.
-  // Historical dominant_weathercode serves as fallback only if live data hasn't loaded or failed.
   const ambientWeathercode =
     currentWeather?.weathercode !== undefined && currentWeather?.weathercode !== null
       ? currentWeather.weathercode
@@ -348,7 +367,6 @@ export default function App() {
       ? currentWeather.wind_speed_kmh
       : (stats?.avg_wind_speed ?? 10);
 
-  // Cloud cover heuristic for live conditions (0: clear ~10%, 1: mainly clear ~25%, 2: partly cloudy ~50%, 3: overcast ~85%, rain/storm ~90%)
   const ambientCloudCover = (() => {
     if (currentWeather?.weathercode !== undefined && currentWeather?.weathercode !== null) {
       const code = currentWeather.weathercode;
@@ -394,7 +412,7 @@ export default function App() {
         />
       )}
 
-      {/* Fixed Full-Viewport Ambient Weather Background Layer (particles paused until splash finishes) */}
+      {/* Fixed Full-Viewport Ambient Weather Background Layer */}
       <FullPageAmbientBackground
         theme={theme}
         weathercode={activeAmbientWeathercode}
@@ -405,7 +423,7 @@ export default function App() {
         isPlaying={isAnimationPlaying && splashDone}
       />
 
-      {/* Dark Contrast Overlay for Ambient Sky Layer (meets 4.5:1 text contrast) */}
+      {/* Dark Contrast Overlay for Ambient Sky Layer */}
       <div className="hero-backdrop-contrast-overlay" aria-hidden="true" />
 
       {/* Full-Viewport Cinematic Branded Hero */}
@@ -425,7 +443,7 @@ export default function App() {
           <div className="brand-lockup">
             <WeatherPulseLogo theme={theme} height={50} />
             <h1 className="sr-only">WeatherPulse</h1>
-            <span className="brand-badge">Historical & Forecast</span>
+            <span className="brand-badge">Historical &amp; Forecast</span>
           </div>
 
           <button
@@ -447,10 +465,17 @@ export default function App() {
           <LocationForm
             onSubmit={(params) => {
               userSelectedRef.current = true;
+              // Save manual pick to localStorage for next session
+              saveLocation(
+                params.locationName || params.name || '',
+                params.lat,
+                params.lon
+              );
               fetchWeatherData(params);
             }}
             isLoading={loading}
             currentLocationName={currentLocationName}
+            searchInputRef={searchInputRef}
           />
         </section>
 
@@ -571,7 +596,7 @@ export default function App() {
             {/* Telemetry Group 1: Comfort & Atmosphere */}
             <section className="telemetry-section-group stagger-card stagger-delay-3" id="telemetry-section">
               <div className="telemetry-group-header">
-                <h4 className="telemetry-group-title">Comfort & Atmosphere</h4>
+                <h4 className="telemetry-group-title">Comfort &amp; Atmosphere</h4>
               </div>
               <div className="telemetry-grid">
                 <FeelsLikePanel daily={daily} stats={stats} live={currentWeather} />
@@ -584,7 +609,7 @@ export default function App() {
             {/* Telemetry Group 2: Wind, Sky & Sunlight */}
             <section className="telemetry-section-group stagger-card stagger-delay-4">
               <div className="telemetry-group-header">
-                <h4 className="telemetry-group-title">Wind, Sky & Sunlight</h4>
+                <h4 className="telemetry-group-title">Wind, Sky &amp; Sunlight</h4>
               </div>
               <div className="telemetry-grid">
                 <WindPanel daily={daily} stats={stats} live={currentWeather} />
