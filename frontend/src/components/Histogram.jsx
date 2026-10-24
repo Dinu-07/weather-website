@@ -31,34 +31,81 @@ export default function Histogram({ daily = [], stats = {} }) {
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, []);
-  const { chartData, bins, avgTemp } = useMemo(() => {
-    if (!daily || daily.length === 0) return { chartData: null, bins: [], avgTemp: null };
+
+  const { chartData, bins, avgTemp, hasInsufficientTemps } = useMemo(() => {
+    if (!daily || daily.length === 0) {
+      return { chartData: null, bins: [], avgTemp: null, hasInsufficientTemps: false };
+    }
 
     const temps = daily
       .map((d) => d.temp_mean_c)
       .filter((t) => t !== null && t !== undefined && !isNaN(t));
 
-    if (temps.length === 0) return { chartData: null, bins: [], avgTemp: null };
+    if (temps.length < 7) {
+      return { chartData: null, bins: [], avgTemp: null, hasInsufficientTemps: true };
+    }
 
-    const min = Math.floor(Math.min(...temps));
-    const max = Math.ceil(Math.max(...temps));
-    const numBins = Math.min(16, Math.max(6, Math.round(Math.sqrt(temps.length))));
-    const binWidth = (max - min) / numBins;
+    const rawMin = Math.min(...temps);
+    const rawMax = Math.max(...temps);
+    const spread = rawMax - rawMin;
+    const isLowSpread = spread < 6;
+
+    // Sturges' rule: ceil(log2(n)) + 1, min 3, max 13
+    const sturges = Math.ceil(Math.log2(temps.length)) + 1;
+    const numBins = Math.min(13, Math.max(3, sturges));
+
+    let min, max, binWidth;
+    if (isLowSpread) {
+      min = rawMin;
+      max = rawMax;
+      binWidth = spread > 0 ? spread / numBins : 1;
+    } else {
+      min = Math.floor(rawMin);
+      max = Math.ceil(rawMax);
+      binWidth = (max - min) / numBins;
+    }
 
     const binList = [];
+    const usedLabels = new Set();
+
     for (let i = 0; i < numBins; i++) {
       const bMin = min + i * binWidth;
-      const bMax = min + (i + 1) * binWidth;
+      const bMax = (i === numBins - 1 && isLowSpread) ? max : min + (i + 1) * binWidth;
+
+      let label;
+      if (isLowSpread) {
+        let startStr = bMin.toFixed(1);
+        let endStr = bMax.toFixed(1);
+        if (startStr === endStr) {
+          endStr = (parseFloat(startStr) + 0.1).toFixed(1);
+        }
+        label = `${startStr}-${endStr}°`;
+        let bump = 0.1;
+        while (usedLabels.has(label)) {
+          let altEnd = (parseFloat(endStr) + bump).toFixed(1);
+          label = `${startStr}-${altEnd}°`;
+          bump += 0.1;
+        }
+      } else {
+        label = `${bMin.toFixed(0)}-${bMax.toFixed(0)}°`;
+        let bump = 1;
+        while (usedLabels.has(label)) {
+          label = `${bMin.toFixed(0)}-${(bMax + bump).toFixed(0)}°`;
+          bump += 1;
+        }
+      }
+      usedLabels.add(label);
+
       binList.push({
         min: bMin,
         max: bMax,
-        label: `${bMin.toFixed(0)}-${bMax.toFixed(0)}°`,
+        label,
         count: 0,
       });
     }
 
     temps.forEach((t) => {
-      let idx = Math.floor((t - min) / binWidth);
+      let idx = binWidth > 0 ? Math.floor((t - min) / binWidth) : 0;
       if (idx >= numBins) idx = numBins - 1;
       if (idx < 0) idx = 0;
       binList[idx].count++;
@@ -80,7 +127,7 @@ export default function Histogram({ daily = [], stats = {} }) {
       ],
     };
 
-    return { chartData: data, bins: binList, avgTemp: avg };
+    return { chartData: data, bins: binList, avgTemp: avg, hasInsufficientTemps: false };
   }, [daily, stats]);
 
   // Plugin to draw subtle dashed vertical line at mean temperature
@@ -176,15 +223,26 @@ export default function Histogram({ daily = [], stats = {} }) {
       },
       y: {
         grid: { color: 'rgba(148, 163, 184, 0.12)' },
+        beginAtZero: true,
         ticks: {
           color: '#94a3b8',
           precision: 0,
+          stepSize: 1,
+          callback: (val) => (Number.isInteger(val) ? val : null),
           maxTicksLimit: isMobile ? 6 : undefined,
           font: { family: "'Inter', sans-serif", size: 11 },
         },
       },
     },
   };
+
+  if (!daily || daily.length === 0) {
+    return <div className="empty-chart">No distribution data available.</div>;
+  }
+
+  if (daily.length < 7 || hasInsufficientTemps) {
+    return <div className="empty-chart">Select at least 7 days to see a distribution.</div>;
+  }
 
   if (!chartData) {
     return <div className="empty-chart">No distribution data available.</div>;

@@ -57,6 +57,14 @@ function getWeatherDetails(code) {
 
 // Shared geolocation helper used by both page-load flow and the crosshair button.
 // Calls getCurrentPosition once (no watchPosition). Resolves with { lat, lon } or rejects.
+function get30DaysBefore(endDateStr) {
+  if (!endDateStr) return "";
+  const [y, m, d] = endDateStr.split("-").map(Number);
+  const endUtc = new Date(Date.UTC(y, m - 1, d));
+  const startUtc = new Date(endUtc.getTime() - 29 * 24 * 60 * 60 * 1000);
+  return startUtc.toISOString().split("T")[0];
+}
+
 function detectMyLocation() {
   return new Promise((resolve, reject) => {
     if (!navigator?.geolocation) {
@@ -85,6 +93,7 @@ export default function App() {
   const [daily, setDaily] = useState([]);
   const [stats, setStats] = useState(null);
   const [forecast, setForecast] = useState([]);
+  const [forecastActuals, setForecastActuals] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastQuery, setLastQuery] = useState(null);
@@ -164,18 +173,40 @@ export default function App() {
     }
 
     const baseUrl = import.meta.env.VITE_API_URL;
+    const forecastStart = get30DaysBefore(params.end);
+    const isShortRange = params.start > forecastStart;
     try {
-      const [weatherRes, forecastRes] = await Promise.all([
+      const requests = [
         axios.get(`${baseUrl}/api/weather`, {
           params: { lat: params.lat, lon: params.lon, start: params.start, end: params.end },
         }),
         axios.get(`${baseUrl}/api/forecast`, {
-          params: { lat: params.lat, lon: params.lon, start: params.start, end: params.end, days: 7 },
+          params: { lat: params.lat, lon: params.lon, start: forecastStart, end: params.end, days: 7 },
         }),
-      ]);
-      setDaily(weatherRes.data.daily || []);
+      ];
+
+      if (isShortRange) {
+        requests.push(
+          axios.get(`${baseUrl}/api/weather`, {
+            params: { lat: params.lat, lon: params.lon, start: forecastStart, end: params.end },
+          })
+        );
+      }
+
+      const results = await Promise.all(requests);
+      const weatherRes = results[0];
+      const forecastRes = results[1];
+      const forecastActualsRes = isShortRange ? results[2] : null;
+
+      const dailyData = weatherRes.data.daily || [];
+      setDaily(dailyData);
       setStats(weatherRes.data.stats || null);
       setForecast(forecastRes.data.forecast || []);
+      if (forecastActualsRes) {
+        setForecastActuals(forecastActualsRes.data.daily || []);
+      } else {
+        setForecastActuals(dailyData.slice(-30));
+      }
     } catch (err) {
       console.error('API Error:', err);
       const friendlyMsg =
@@ -516,7 +547,7 @@ export default function App() {
                   <Histogram daily={daily} stats={stats} />
                 </div>
                 <div className="weather-card" id="forecast-section">
-                  <ForecastChart daily={daily} forecast={forecast} />
+                  <ForecastChart daily={daily} actuals={forecastActuals} forecast={forecast} />
                 </div>
               </div>
             </section>

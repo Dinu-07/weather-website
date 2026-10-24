@@ -1271,6 +1271,11 @@
   line-height: 1.4;
 }
 
+.telemetry-sub-stats .sub-stat-item.precip-note {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
 .telemetry-sub-stats .sub-stat-label {
   color: var(--text-muted);
   font-size: 11px;

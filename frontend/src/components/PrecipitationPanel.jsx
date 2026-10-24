@@ -85,7 +85,7 @@ export default function PrecipitationPanel({ daily = [], stats = null, live = nu
             </div>
           ) : (
             <div className="telemetry-sub-stats">
-              <span className="sub-stat-item">Rain probability tracked for recent dates</span>
+              <span className="sub-stat-item precip-note">Rain probability tracked for recent dates</span>
             </div>
           )}
 
