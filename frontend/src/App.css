@@ -1106,6 +1106,28 @@
   text-overflow: unset;
 }
 
+/* At 1025px and wider: badge on its own row under title with identical height across cards */
+@media (min-width: 1025px) {
+  .card-top-row {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 6px;
+    height: 52px;
+    min-height: 52px;
+  }
+
+  .card-icon-title {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .card-status-pill {
+    flex: 0 0 auto;
+    align-self: flex-start;
+  }
+}
+
 .telemetry-empty-notice {
   font-size: 13px;
   color: var(--text-muted);
